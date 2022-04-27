@@ -23,7 +23,29 @@ func LoadControlCassette(ctx context.Context, tape string) (*C, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to ping cassette %v, cause %v", tape, err)
 	}
-	return &C{db: conn}, nil
+	c := &C{db: conn}
+	err = c.init(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("unable to init cassette %v, cause %v", tape, err)
+	}
+	return c, nil
+}
+
+func (c *C) init(ctx context.Context) error {
+	for _, cmd := range []string{
+		`create table if not exists assets(
+			asset_id integer not null,
+			path text not null,
+			path_hash integer not null,
+			content blob not null
+		)`,
+	} {
+		_, err := c.db.ExecContext(ctx, cmd)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *C) Close() error {
