@@ -52,6 +52,24 @@ func LoadControlCassette(ctx context.Context, tape string, readwrite bool) (*Con
 	return c, nil
 }
 
+func (c *Control) ListAssets(ctx context.Context) ([]string, error) {
+	var out []string
+	rows, err := c.db.QueryContext(ctx, `select path from assets order by path asc`)
+	if err != nil {
+		return nil, fmt.Errorf("unable to list assets, cause %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		err = rows.Scan(&name)
+		if err != nil {
+			return nil, fmt.Errorf("unable to scan asset name to output, cause %v", err)
+		}
+		out = append(out, name)
+	}
+	return out, nil
+}
+
 func (c *Control) CopyAsset(ctx context.Context, out io.Writer, assetPath string) (int64, string, error) {
 	assetPath, pathHash := c.normalizeAssetPath(assetPath)
 	var content string
