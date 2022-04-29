@@ -3,11 +3,63 @@ package cassette
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+func TestCodebaseCassette(t *testing.T) {
+	tape, cleanup := tempTape(t, "test")
+	defer cleanup()
+
+	ctx := context.Background()
+	c, err := LoadControlCassette(ctx, tape, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.StoreAsset(ctx, "codebase/index.lua", "text/x-lua", `local ctx = require('http/ctx')
+	ctx.writeBody('<h1>it works</h1>')
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = c.ToggleCodebase(ctx, "codebase/index.lua", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = c.ToggleCodebase(ctx, "codebase/index.lua", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestInvalidCodebaseCassette(t *testing.T) {
+	tape, cleanup := tempTape(t, "test")
+	defer cleanup()
+
+	ctx := context.Background()
+	c, err := LoadControlCassette(ctx, tape, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, assetPath := range []string{
+		"not-codebase/index.lua",
+		"codebase/index.not_lua_extension",
+	} {
+		_, err = c.StoreAsset(ctx, assetPath, "text/x-lua", `local ctx = require('http/ctx')
+		ctx.writeBody('<h1>it works</h1>')
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = c.ToggleCodebase(ctx, "codebase/index.lua", true)
+		if err == nil {
+			t.Fatalf("asset %v should never be considered a valid codebase", assetPath)
+		}
+	}
+}
 
 func TestControlCassette(t *testing.T) {
 	tape, cleanup := tempTape(t, "test")
@@ -32,6 +84,10 @@ func TestControlCassette(t *testing.T) {
 		t.Fatalf("Copying asset should return ID %v got %v", assetID, actualID)
 	} else if out.String() != "<h1>it works</h1>" {
 		t.Fatalf("Invalid content from asset, got %v", out.String())
+	}
+	err = c.ToggleCodebase(ctx, "index.html", true)
+	if !errors.Is(err, InvalidCodebase{Path: "index.html", MimeType: "text/html"}) {
+		t.Fatalf("Codebase validation failed: %#v", err)
 	}
 	err = c.Close()
 	if err != nil {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/cespare/xxhash/v2"
@@ -89,6 +90,38 @@ func (c *Control) StoreAsset(ctx context.Context, assetPath string, mimetype str
 	return seq, nil
 }
 
+func (c *Control) ToggleCodebase(ctx context.Context, assetPath string, enable bool) error {
+	assetPath, pathHash := c.normalizeAssetPath(assetPath)
+	var mt string
+	var id int64
+	err := c.db.QueryRowContext(ctx, `select asset_id, mime_type from assets where path_hash64 = ? and path = ?`, pathHash, assetPath).Scan(&id, &mt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return AssetNotFound{Path: assetPath}
+	} else if err != nil {
+		return fmt.Errorf("unable to load %v from cassete, cause %w", assetPath, err)
+	}
+	switch mt {
+	case "text/x-lua", "application/x-lua":
+		break
+	default:
+		return InvalidCodebase{MimeType: mt, Path: assetPath}
+	}
+	if !c.validCodebasePath(assetPath) {
+		return InvalidCodebase{
+			Path: assetPath, MimeType: mt, msg: "codebase assets must exist within codebase/... root and must have .lua extension",
+		}
+	}
+	if enable {
+		_, err = c.db.ExecContext(ctx, `insert into codebase(asset_id) values (?) on conflict (asset_id) do nothing`, id)
+	} else {
+		_, err = c.db.ExecContext(ctx, `delete from codebase where asset_id = ?`, id)
+	}
+	if err != nil {
+		return fmt.Errorf("unable to change state of asset %v in codebase, cause %w", assetPath, err)
+	}
+	return nil
+}
+
 func (c *Control) nextSeq(ctx context.Context, seq string) (int64, error) {
 	var val int64
 	err := c.db.QueryRowContext(ctx, `insert into counters (name, val) values (?, 1) on conflict do update set val = val + 1 returning val`, seq).Scan(&val)
@@ -96,6 +129,11 @@ func (c *Control) nextSeq(ctx context.Context, seq string) (int64, error) {
 		return 0, fmt.Errorf("unable to increment sequence %v, cause %w", seq, err)
 	}
 	return val, nil
+}
+
+func (c *Control) validCodebasePath(assetPath string) bool {
+	return strings.HasPrefix(assetPath, "codebase/") &&
+		path.Ext(assetPath) == ".lua"
 }
 
 func (c *Control) normalizeAssetPath(assetPath string) (string, int64) {
