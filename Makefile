@@ -6,7 +6,7 @@ build: ./dist
 	go build -o ./dist/boombox ./cmd/boombox
 
 run: build
-	./dist/boombox
+	./dist/boombox serve
 
 test:
 	go test ./...

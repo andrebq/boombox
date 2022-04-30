@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"unicode/utf8"
 
@@ -32,6 +34,13 @@ var (
 )
 
 func openCassetteDatabase(ctx context.Context, tape string, readwrite bool) (*sql.DB, error) {
+	tape = filepath.Join(tape, "k7.db")
+	if readwrite {
+		err := os.Mkdir(filepath.Dir(tape), 0755)
+		if err != nil {
+			return nil, fmt.Errorf("unable to create directory %v to store cassette, cause %w", tape, err)
+		}
+	}
 	var connstr string
 	if readwrite {
 		connstr = fmt.Sprintf("file:%v?_writable_schema=false&_journal=wal&mode=rwc", tape)
