@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -19,15 +20,25 @@ func TestCodebaseCassette(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = c.StoreAsset(ctx, "codebase/index.lua", "text/x-lua", `local ctx = require('http/ctx')
-	ctx.writeBody('<h1>it works</h1>')
-	`)
+	indexLuaCode := `local ctx = require('http/ctx')
+	ctx.writeBody('<h1>it works</h1>')`
+	_, err = c.StoreAsset(ctx, "codebase/index.lua", "text/x-lua", indexLuaCode)
 	if err != nil {
 		t.Fatal(err)
 	}
 	err = c.ToggleCodebase(ctx, "codebase/index.lua", true)
 	if err != nil {
 		t.Fatal(err)
+	}
+	err = c.MapRoute(ctx, []string{"get", "post"}, "/index", "codebase/index.lua")
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes, err := c.ListRoutes(ctx)
+	if err != nil {
+		t.Fatal(err)
+	} else if !reflect.DeepEqual(routes, []Code{{Route: "/index", Code: indexLuaCode, Methods: []string{"GET", "POST"}}}) {
+		t.Fatalf("Unexpected routes found: %#v", routes)
 	}
 	err = c.ToggleCodebase(ctx, "codebase/index.lua", false)
 	if err != nil {

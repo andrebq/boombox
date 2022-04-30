@@ -12,7 +12,7 @@ type (
 		Path     string
 		MimeType string
 
-		msg string
+		cause error
 	}
 
 	AssetNotFound struct {
@@ -25,10 +25,14 @@ func (i InvalidTextContent) Error() string {
 }
 
 func (i InvalidCodebase) Error() string {
-	if i.msg != "" {
-		return i.msg
+	if i.cause != nil {
+		return i.cause.Error()
 	}
 	return fmt.Sprintf("assets with mimetype %v cannot be used as code", i.MimeType)
+}
+
+func (i InvalidCodebase) Unwrap() error {
+	return i.cause
 }
 
 func (a AssetNotFound) Error() string {

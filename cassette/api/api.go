@@ -9,10 +9,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/andrebq/boombox/cassette"
+	"github.com/andrebq/boombox/internal/lua/bindings/httplua"
 	"github.com/julienschmidt/httprouter"
+	lua "github.com/yuin/gopher-lua"
 )
 
 func AsHandler(ctx context.Context, c *cassette.Control) (http.Handler, error) {
@@ -44,7 +47,52 @@ func AsHandler(ctx context.Context, c *cassette.Control) (http.Handler, error) {
 			router.HandlerFunc("GET", dir, serveAsset(c, s))
 		}
 	}
+
+	routes, err := c.ListRoutes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range routes {
+		apiRoute := path.Join("/api", r.Route)
+		for _, m := range r.Methods {
+			router.HandlerFunc(m, apiRoute, serveDynamicCode(r.Code))
+		}
+	}
 	return router, nil
+}
+
+func serveDynamicCode(code string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		timeoutCtx, cancel := context.WithTimeout(r.Context(), time.Second*10)
+		defer cancel()
+		r = r.WithContext(timeoutCtx)
+		L := lua.NewState(lua.Options{
+			SkipOpenLibs: true,
+		})
+		L.SetContext(r.Context())
+		defer L.Close()
+		for _, pair := range []struct {
+			n string
+			f lua.LGFunction
+		}{
+			{lua.LoadLibName, lua.OpenPackage}, // Must be first
+			{lua.BaseLibName, lua.OpenBase},
+			{lua.TabLibName, lua.OpenTable},
+		} {
+			if err := L.CallByParam(lua.P{
+				Fn:      L.NewFunction(pair.f),
+				NRet:    0,
+				Protect: true,
+			}, lua.LString(pair.n)); err != nil {
+				panic(err)
+			}
+		}
+		L.PreloadModule("ctx", httplua.OpenServer(w, r))
+		err := L.DoString(code)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Dynamic page failed with unexpected error:\n%v\n\n\n----\n\n\n%v", err, code), http.StatusBadGateway)
+		}
+	}
 }
 
 func serveAsset(c *cassette.Control, assetPath string) http.HandlerFunc {

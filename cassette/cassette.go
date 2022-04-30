@@ -19,6 +19,16 @@ type (
 		db        *sql.DB
 		writeable bool
 	}
+
+	Code struct {
+		Methods []string
+		Route   string
+		Code    string
+	}
+)
+
+var (
+	errInvalidCodebaseAsset = errors.New("codebase assets must be stored under codebase/ and must have a valid lua mime-type")
 )
 
 func openCassetteDatabase(ctx context.Context, tape string, readwrite bool) (*sql.DB, error) {
@@ -50,6 +60,43 @@ func LoadControlCassette(ctx context.Context, tape string, readwrite bool) (*Con
 		return nil, fmt.Errorf("unable to init cassette %v, cause %v", tape, err)
 	}
 	return c, nil
+}
+
+func (c *Control) ListRoutes(ctx context.Context) ([]Code, error) {
+	var out []Code
+	rows, err := c.db.QueryContext(ctx, `select r.route, a.content, r.methods
+	from routes r
+	inner join codebase c on r.asset_id = c.asset_id
+	inner join assets a on c.asset_id = a.asset_id`)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get routes from cassette, cause %w", err)
+	}
+	for rows.Next() {
+		var c Code
+		var methodStr string
+		err = rows.Scan(&c.Route, &c.Code, &methodStr)
+		if err != nil {
+			return nil, fmt.Errorf("unable to get routes from cassette, cause %w", err)
+		}
+		methodStr = strings.ToUpper(methodStr)
+		c.Methods = strings.Split(methodStr, "|")
+		out = append(out, c)
+	}
+	return out, nil
+}
+
+func (c *Control) MapRoute(ctx context.Context, methods []string, route string, asset string) error {
+	// TODO: perform proper method validation here
+	asset, _ = c.normalizeAssetPath(asset)
+	id, _, err := c.lookupCodebase(ctx, asset)
+	if err != nil {
+		return err
+	}
+	_, err = c.db.ExecContext(ctx, `insert into routes (route, methods, asset_id) values (?, ?, ?)`, route, strings.ToUpper(strings.Join(methods, "|")), id)
+	if err != nil {
+		return fmt.Errorf("unable to configure route %v using asset %v, cause %w", route, asset, err)
+	}
+	return nil
 }
 
 func (c *Control) ListAssets(ctx context.Context) ([]string, error) {
@@ -124,9 +171,9 @@ func (c *Control) ToggleCodebase(ctx context.Context, assetPath string, enable b
 	default:
 		return InvalidCodebase{MimeType: mt, Path: assetPath}
 	}
-	if !c.validCodebasePath(assetPath) {
+	if err := c.validCodebasePath(assetPath); err != nil {
 		return InvalidCodebase{
-			Path: assetPath, MimeType: mt, msg: "codebase assets must exist within codebase/... root and must have .lua extension",
+			Path: assetPath, MimeType: mt, cause: err,
 		}
 	}
 	if enable {
@@ -149,9 +196,31 @@ func (c *Control) nextSeq(ctx context.Context, seq string) (int64, error) {
 	return val, nil
 }
 
-func (c *Control) validCodebasePath(assetPath string) bool {
-	return strings.HasPrefix(assetPath, "codebase/") &&
+func (c *Control) lookupCodebase(ctx context.Context, assetPath string) (int64, string, error) {
+	assetPath, hash := c.normalizeAssetPath(assetPath)
+	if err := c.validCodebasePath(assetPath); err != nil {
+		return 0, "", InvalidCodebase{
+			Path:  assetPath,
+			cause: err,
+		}
+	}
+	var id int64
+	var mt string
+	err := c.db.QueryRowContext(ctx, `select a.asset_id, a.mime_type from assets a inner join codebase c on c.asset_id = a.asset_id
+	where a.path_hash64 = ? and a.path = ?`, hash, assetPath).Scan(&id, &mt)
+	if err != nil {
+		return 0, "", fmt.Errorf("unable to lookup codebase on path %v, cause %w", assetPath, err)
+	}
+	return id, mt, nil
+}
+
+func (c *Control) validCodebasePath(assetPath string) error {
+	valid := strings.HasPrefix(assetPath, "codebase/") &&
 		path.Ext(assetPath) == ".lua"
+	if !valid {
+		return errInvalidCodebaseAsset
+	}
+	return nil
 }
 
 func (c *Control) normalizeAssetPath(assetPath string) (string, int64) {
@@ -182,6 +251,7 @@ func (c *Control) init(ctx context.Context) error {
 		)`,
 		`create table if not exists routes(
 			route text not null primary key,
+			methods text not null,
 			asset_id integer,
 			foreign key(asset_id) references codebase(asset_id)
 		)`,

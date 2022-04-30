@@ -24,6 +24,22 @@ func TestApi(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	_, err = cassette.StoreAsset(ctx, "codebase/index.lua", "text/x-lua", `
+	local ctx = require('ctx')
+	local res = ctx.res
+	res:write_body('hello from lua')
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = cassette.ToggleCodebase(ctx, "codebase/index.lua", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = cassette.MapRoute(ctx, []string{"GET"}, "/hello-from-lua", "codebase/index.lua")
+	if err != nil {
+		t.Fatal(err)
+	}
 	handler, err := AsHandler(ctx, cassette)
 	if err != nil {
 		t.Fatal(err)
@@ -55,6 +71,14 @@ func TestApi(t *testing.T) {
 		Get("/nested/folder/"). // request
 		Expect(t).              // expectations
 		Body(`<h1>it works</h1>`).
+		Status(http.StatusOK).
+		End()
+
+	apitest.New().
+		Handler(handler).
+		Get("/api/hello-from-lua").
+		Expect(t).
+		Body(`hello from lua`).
 		Status(http.StatusOK).
 		End()
 }
