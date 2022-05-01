@@ -9,6 +9,7 @@ import (
 type (
 	D struct {
 		cassettes map[string]*cassette.Control
+		index     string
 	}
 )
 
@@ -23,6 +24,14 @@ func (d *D) Load(name string, cassette *cassette.Control) {
 		d.cassettes[name].Close()
 	}
 	d.cassettes[name] = cassette
+}
+
+func (d *D) IndexCassette(name string) {
+	d.index = name
+}
+
+func (d *D) Index() *cassette.Control {
+	return d.cassettes[d.index]
 }
 
 func (d *D) List() []string {

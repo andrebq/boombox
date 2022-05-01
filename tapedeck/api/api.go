@@ -20,5 +20,13 @@ func AsHandler(ctx context.Context, d *tapedeck.D) (http.Handler, error) {
 		}
 		mux.Handle(fmt.Sprintf("%v/", prefix), http.StripPrefix(prefix, handler))
 	}
+	idx := d.Index()
+	if idx != nil {
+		idxHandler, err := api.AsHandler(ctx, idx)
+		if err != nil {
+			return nil, err
+		}
+		mux.Handle("/", idxHandler)
+	}
 	return mux, nil
 }

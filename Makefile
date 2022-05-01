@@ -6,7 +6,8 @@ build: ./dist
 	go build -o ./dist/boombox ./cmd/boombox
 
 run: build
-	./dist/boombox serve
+	./dist/boombox k7 -f ./dist/index.tape i -dir ./testdata/sample-cassettes/index.tape
+	./dist/boombox serve -tape ./dist/index.tape
 
 test:
 	go test ./...

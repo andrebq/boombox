@@ -36,7 +36,7 @@ var (
 func openCassetteDatabase(ctx context.Context, tape string, readwrite bool) (*sql.DB, error) {
 	tape = filepath.Join(tape, "k7.db")
 	if readwrite {
-		err := os.Mkdir(filepath.Dir(tape), 0755)
+		err := os.MkdirAll(filepath.Dir(tape), 0755)
 		if err != nil {
 			return nil, fmt.Errorf("unable to create directory %v to store cassette, cause %w", tape, err)
 		}
@@ -45,7 +45,7 @@ func openCassetteDatabase(ctx context.Context, tape string, readwrite bool) (*sq
 	if readwrite {
 		connstr = fmt.Sprintf("file:%v?_writable_schema=false&_journal=wal&mode=rwc", tape)
 	} else {
-		connstr = fmt.Sprintf("file:%v?_writable_schema=false&mode=r", tape)
+		connstr = fmt.Sprintf("file:%v?_writable_schema=false&mode=ro", tape)
 	}
 	conn, err := sql.Open("sqlite3", connstr)
 	if err != nil {
@@ -156,7 +156,7 @@ func (c *Control) StoreAsset(ctx context.Context, assetPath string, mimetype str
 			return 0, InvalidTextContent{Path: assetPath, MimeType: mimetype}
 		}
 	}
-	_, err = c.db.ExecContext(ctx, `insert into assets(asset_id, path, path_hash64, mime_type, content) values (?, ?, ?, ?, ?)`,
+	_, err = c.db.ExecContext(ctx, `insert into assets(asset_id, path, path_hash64, mime_type, content) values (?, ?, ?, ?, ?) on conflict (path) do update set mime_type = EXCLUDED.mime_type, content = EXCLUDED.content`,
 		seq, assetPath, pathHash, mimetype, content)
 	if err != nil {
 		return 0, fmt.Errorf("unable to store asset to cassette, cause %w", err)
@@ -251,7 +251,7 @@ func (c *Control) init(ctx context.Context) error {
 			mime_type string not null,
 			content blob not null
 		)`,
-		`create index idx_assets_path_hash64
+		`create index if not exists idx_assets_path_hash64
 			on assets(path_hash64)
 		`,
 		`create table if not exists codebase(
