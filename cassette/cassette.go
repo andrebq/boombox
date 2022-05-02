@@ -18,7 +18,12 @@ import (
 
 type (
 	Control struct {
-		db        *sql.DB
+		db     *sql.DB
+		datadb *sql.DB
+
+		controlPath string
+		dataPath    string
+
 		writeable bool
 	}
 
@@ -27,18 +32,20 @@ type (
 		Route   string
 		Code    string
 	}
+
+	Row []interface{}
 )
 
 var (
 	errInvalidCodebaseAsset = errors.New("codebase assets must be stored under codebase/ and must have a valid lua mime-type")
 )
 
-func openCassetteDatabase(ctx context.Context, tape string, readwrite bool) (*sql.DB, error) {
-	tape = filepath.Join(tape, "k7.db")
+func openCassetteDatabase(ctx context.Context, tape string, dbname string, readwrite bool) (*sql.DB, string, error) {
+	tape = filepath.Join(tape, dbname)
 	if readwrite {
 		err := os.MkdirAll(filepath.Dir(tape), 0755)
 		if err != nil {
-			return nil, fmt.Errorf("unable to create directory %v to store cassette, cause %w", tape, err)
+			return nil, tape, fmt.Errorf("unable to create directory %v to store cassette, cause %w", tape, err)
 		}
 	}
 	var connstr string
@@ -49,24 +56,38 @@ func openCassetteDatabase(ctx context.Context, tape string, readwrite bool) (*sq
 	}
 	conn, err := sql.Open("sqlite3", connstr)
 	if err != nil {
-		return nil, fmt.Errorf("unable to open %v, cause %v", tape, err)
+		return nil, tape, fmt.Errorf("unable to open %v, cause %v", tape, err)
 	}
 	err = conn.PingContext(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("unable to ping cassette %v, cause %v", tape, err)
+		return nil, tape, fmt.Errorf("unable to ping cassette %v, cause %v", tape, err)
 	}
-	return conn, nil
+	return conn, tape, nil
 }
 
-func LoadControlCassette(ctx context.Context, tape string, readwrite bool) (*Control, error) {
-	conn, err := openCassetteDatabase(ctx, tape, readwrite)
+func LoadControlCassette(ctx context.Context, tape string, readwrite bool, enableData bool) (*Control, error) {
+	conn, controlPath, err := openCassetteDatabase(ctx, tape, "k7.db", readwrite)
 	if err != nil {
 		return nil, err
 	}
-	c := &Control{db: conn, writeable: readwrite}
+	c := &Control{db: conn, writeable: readwrite, controlPath: controlPath}
 	err = c.init(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("unable to init cassette %v, cause %v", tape, err)
+	}
+	if enableData {
+		dataconn, dataPath, err := openCassetteDatabase(ctx, tape, "datak7.db", readwrite)
+		if err != nil {
+			c.Close()
+			return nil, err
+		}
+		err = c.initData(ctx)
+		if err != nil {
+			c.Close()
+			return nil, err
+		}
+		c.datadb = dataconn
+		c.dataPath = dataPath
 	}
 	return c, nil
 }
@@ -101,7 +122,7 @@ func (c *Control) MapRoute(ctx context.Context, methods []string, route string, 
 	if err != nil {
 		return err
 	}
-	_, err = c.db.ExecContext(ctx, `insert into routes (route, methods, asset_id) values (?, ?, ?)`, route, strings.ToUpper(strings.Join(methods, "|")), id)
+	_, err = c.db.ExecContext(ctx, `insert into routes (route, methods, asset_id) values (?, ?, ?) on conflict (route) do update set methods = EXCLUDED.methods and asset_id = EXCLUDED.asset_id`, route, strings.ToUpper(strings.Join(methods, "|")), id)
 	if err != nil {
 		return fmt.Errorf("unable to configure route %v using asset %v, cause %w", route, asset, err)
 	}
@@ -196,6 +217,37 @@ func (c *Control) ToggleCodebase(ctx context.Context, assetPath string, enable b
 	return nil
 }
 
+func (c *Control) Query(ctx context.Context, query string, limit int, args ...interface{}) ([]string, []Row, error) {
+	if c.writeable {
+		// TODO: querying a writable cassette is SOOOO wrong that I am considering a panic instead!
+		// afterall, a Queryable Cassette should run alone on its own process...
+		return nil, nil, CannotQuery{}
+	}
+	rows, err := c.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, nil, QueryError{Query: query, cause: err, Params: args}
+	}
+	defer rows.Close()
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, nil, QueryError{Query: query, cause: err, Params: args}
+	}
+	var output []Row
+	for rows.Next() {
+		r := make(Row, len(columns))
+		scanTarget := make([]interface{}, len(r))
+		for i := range scanTarget {
+			scanTarget[i] = &r[i]
+		}
+		err = rows.Scan(scanTarget...)
+		if err != nil {
+			return nil, nil, QueryError{Query: query, cause: err, Params: args}
+		}
+		output = append(output, r)
+	}
+	return columns, output, nil
+}
+
 func (c *Control) nextSeq(ctx context.Context, seq string) (int64, error) {
 	var val int64
 	err := c.db.QueryRowContext(ctx, `insert into counters (name, val) values (?, 1) on conflict do update set val = val + 1 returning val`, seq).Scan(&val)
@@ -273,6 +325,15 @@ func (c *Control) init(ctx context.Context) error {
 	return nil
 }
 
+func (c *Control) initData(ctx context.Context) error {
+	_, err := c.db.ExecContext(ctx, `attach database ? as 'dataset'`, c.dataPath)
+	return err
+}
+
 func (c *Control) Close() error {
-	return c.db.Close()
+	err := c.db.Close()
+	if c.datadb != nil {
+		c.datadb.Close()
+	}
+	return err
 }

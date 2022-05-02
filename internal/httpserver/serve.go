@@ -26,15 +26,16 @@ func Serve(ctx context.Context, bind string, handler http.Handler) error {
 }
 
 func serveInBackground(ctx context.Context, server *http.Server, firstErr chan<- error, done chan<- struct{}) {
-	log := logutil.GetOrDefault(ctx)
+	log := logutil.GetOrDefault(ctx).With().Str("server.addr", server.Addr).Logger()
 	defer close(done)
 	serverCtx, cancel := context.WithCancel(ctx)
 	go func() {
 		defer cancel()
 		defer close(firstErr)
-		log.Info().Str("server.addr", server.Addr).Msg("Starting HTTP server")
+		log.Info().Msg("Starting HTTP server")
 		err := server.ListenAndServe()
 		if errors.Is(err, http.ErrServerClosed) {
+			log.Info().Msg("Server closed")
 			// shutdown called,
 			// ignore the error
 			return
@@ -49,8 +50,10 @@ func serveInBackground(ctx context.Context, server *http.Server, firstErr chan<-
 	select {
 	case <-serverCtx.Done():
 	case <-ctx.Done():
+		log.Info().Msg("Initiating shutdown process")
 		shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), time.Minute)
 		defer cancelShutdown()
 		server.Shutdown(shutdownCtx)
+		log.Info().Msg("Shutdown completed")
 	}
 }

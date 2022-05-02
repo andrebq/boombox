@@ -18,6 +18,14 @@ type (
 	AssetNotFound struct {
 		Path string
 	}
+
+	CannotQuery struct{}
+
+	QueryError struct {
+		Query  string
+		Params []interface{}
+		cause  error
+	}
 )
 
 func (i InvalidTextContent) Error() string {
@@ -37,4 +45,14 @@ func (i InvalidCodebase) Unwrap() error {
 
 func (a AssetNotFound) Error() string {
 	return fmt.Sprintf("asset %v not found", a.Path)
+}
+
+func (c CannotQuery) Error() string { return "cassette is writable, therefore cannot be queried" }
+
+func (q QueryError) Error() string {
+	return q.cause.Error()
+}
+
+func (q QueryError) Unwrap() error {
+	return q.cause
 }

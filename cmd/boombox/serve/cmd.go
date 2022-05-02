@@ -42,7 +42,7 @@ func Cmd() *cli.Command {
 			deck := tapedeck.New()
 			defer deck.Close()
 			for _, t := range tapes.Value() {
-				c, err := cassette.LoadControlCassette(ctx.Context, t, false)
+				c, err := cassette.LoadControlCassette(ctx.Context, t, false, true)
 				if err != nil {
 					return err
 				}

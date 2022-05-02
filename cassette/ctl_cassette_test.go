@@ -11,12 +11,47 @@ import (
 	"testing"
 )
 
+func TestQueryCassette(t *testing.T) {
+	tape, cleanup := tempTape(t, "test")
+	defer cleanup()
+
+	ctx := context.Background()
+	c, err := LoadControlCassette(ctx, tape, true, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.StoreAsset(ctx, "index.html", "text/html", "<h1>it works</h1>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = c.Query(ctx, "select path, mime_type from assets", 1)
+	if err == nil {
+		t.Fatal("A writable Cassette cannot be queried, but it was!")
+	}
+	if err := c.Close(); err != nil {
+		t.Fatal(err)
+	}
+	c, err = LoadControlCassette(ctx, tape, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	columns, data, err := c.Query(ctx, "select path, mime_type from assets", 1)
+	if err != nil {
+		t.Fatal(err)
+	} else if !reflect.DeepEqual(columns, []string{"path", "mime_type"}) {
+		t.Fatalf("Invalid column list, got %v", columns)
+	} else if !reflect.DeepEqual(data, []Row{{"index.html", "text/html"}}) {
+		t.Fatalf("Invalid data, got %v", data)
+	}
+	c.Close()
+}
+
 func TestCodebaseCassette(t *testing.T) {
 	tape, cleanup := tempTape(t, "test")
 	defer cleanup()
 
 	ctx := context.Background()
-	c, err := LoadControlCassette(ctx, tape, true)
+	c, err := LoadControlCassette(ctx, tape, true, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +86,7 @@ func TestInvalidCodebaseCassette(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	c, err := LoadControlCassette(ctx, tape, true)
+	c, err := LoadControlCassette(ctx, tape, true, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +112,7 @@ func TestControlCassette(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	c, err := LoadControlCassette(ctx, tape, true)
+	c, err := LoadControlCassette(ctx, tape, true, true)
 	if err != nil {
 		t.Fatal(err)
 	}

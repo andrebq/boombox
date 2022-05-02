@@ -46,7 +46,7 @@ func importCmd(tape *string) *cli.Command {
 			},
 		},
 		Action: func(ctx *cli.Context) error {
-			k7, err := cassette.LoadControlCassette(ctx.Context, *tape, true)
+			k7, err := cassette.LoadControlCassette(ctx.Context, *tape, true, true)
 			if err != nil {
 				return err
 			}

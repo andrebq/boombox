@@ -66,7 +66,7 @@ func tempCassette(ctx context.Context, t interface {
 		t.Fatal(err)
 	}
 	abspath := filepath.Join(dir, name)
-	ctl, err := cassette.LoadControlCassette(ctx, abspath, true)
+	ctl, err := cassette.LoadControlCassette(ctx, abspath, true, true)
 	if err != nil {
 		t.Fatal(err)
 	}
