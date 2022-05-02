@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"html/template"
 	"net/http"
 	"path"
 	"sort"
@@ -16,6 +17,31 @@ import (
 	"github.com/andrebq/boombox/internal/lua/bindings/httplua"
 	"github.com/julienschmidt/httprouter"
 	lua "github.com/yuin/gopher-lua"
+)
+
+var (
+	assetListTemplate = template.Must(template.New("__root__").Parse(`
+<!doctype html>
+<html>
+  <head>
+	<title>Cassette assets</title>
+  </head>
+  <body>
+    <h1>List of assets from cassette</h1>
+    <ul>
+      {{ range .Assets }}
+      <li><a href="../{{.}}" target="_self">{{.}}</a></li>
+      {{ end }}
+    </ul>
+  </body>
+</html>
+`))
+)
+
+type (
+	assetListTemplateModel struct {
+		Assets []string
+	}
 )
 
 func AsHandler(ctx context.Context, c *cassette.Control) (http.Handler, error) {
@@ -48,6 +74,8 @@ func AsHandler(ctx context.Context, c *cassette.Control) (http.Handler, error) {
 		}
 	}
 
+	router.HandlerFunc("GET", "/@internals/asset-list", listAssets(c))
+
 	routes, err := c.ListRoutes(ctx)
 	if err != nil {
 		return nil, err
@@ -59,6 +87,17 @@ func AsHandler(ctx context.Context, c *cassette.Control) (http.Handler, error) {
 		}
 	}
 	return router, nil
+}
+
+func listAssets(c *cassette.Control) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		items, err := c.ListAssets(r.Context())
+		if err != nil {
+			http.Error(w, "Unable to fetch list of assets, please try again later", http.StatusInternalServerError)
+			return
+		}
+		assetListTemplate.Execute(w, assetListTemplateModel{Assets: items})
+	}
 }
 
 func serveDynamicCode(code string) http.HandlerFunc {
