@@ -47,7 +47,8 @@ func (e UserCodeError) Unwrap() error {
 }
 
 func Directory(ctx context.Context, target *cassette.Control, base string, allowCodebase bool) error {
-	var files []string
+	var assets []string
+	var datasets []string
 	base = filepath.Clean(base)
 	filepath.WalkDir(base, func(path string, d fs.DirEntry, err error) error {
 		// cassettes are restricted to files
@@ -56,11 +57,24 @@ func Directory(ctx context.Context, target *cassette.Control, base string, allow
 		}
 		// all assets must be relative
 		assetPath := path[len(base)+1:]
-		files = append(files, assetPath)
+		if strings.HasPrefix(filepath.ToSlash(assetPath), "dataset/") {
+			// datasets undergo a different processing logic
+			datasets = append(datasets, assetPath)
+			if filepath.Base(path) == "dataset.lua" {
+				// dataset.lua is considered a public asset as it describes
+				// the relational data available in the cassette.
+				//
+				// The content of the files will be available as relational tables
+				// within the cassette
+				assets = append(assets, assetPath)
+			}
+			return nil
+		}
+		assets = append(assets, assetPath)
 		return nil
 	})
 	var routes []auxRoute
-	for _, f := range files {
+	for _, f := range assets {
 		if filepath.Base(f) == "routes.lua" {
 			err := scanRoutes(ctx, &routes, filepath.Join(base, f))
 			if err != nil {
