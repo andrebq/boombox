@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -14,8 +15,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/andrebq/boombox/cassette"
+	"github.com/andrebq/boombox/internal/logutil"
 	"github.com/andrebq/boombox/internal/lua/bindings/httplua"
 	"github.com/julienschmidt/httprouter"
+	"github.com/rs/zerolog"
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -74,7 +77,7 @@ func AsHandler(ctx context.Context, c *cassette.Control) (http.Handler, error) {
 		}
 	}
 
-	router.HandlerFunc("GET", "/@internals/asset-list", listAssets(c))
+	router.HandlerFunc("GET", "/.internals/asset-list", listAssets(c))
 
 	routes, err := c.ListRoutes(ctx)
 	if err != nil {
@@ -86,7 +89,58 @@ func AsHandler(ctx context.Context, c *cassette.Control) (http.Handler, error) {
 			router.HandlerFunc(m, apiRoute, serveDynamicCode(r.Code))
 		}
 	}
+
+	if c.Queryable() {
+		router.HandlerFunc("GET", "/.query", queryCassette(ctx, c))
+	}
 	return router, nil
+}
+
+func queryCassette(ctx context.Context, c *cassette.Control) http.HandlerFunc {
+	log := logutil.GetOrDefault(ctx).Sample(zerolog.Often)
+	// TODO: this endpoint should ran under a separate user and process
+	// but for now, let's make everything available under the same process (everything is readonly so far...)
+	return func(w http.ResponseWriter, r *http.Request) {
+		// TODO: 10 seconds might be considered too generous for a sqlite query
+		err := r.ParseForm()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		sql := r.FormValue("sql")
+		if len(sql) == 0 {
+			http.Error(w, "missing sql parameter", http.StatusBadRequest)
+			return
+		}
+		maxRows, err := strconv.Atoi(r.FormValue("maxRows"))
+		if err != nil || maxRows > 1000 {
+			maxRows = 1000
+		}
+		// TODO: handle sql query parameters, for now, deal with unparameterized queries
+		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		defer cancel()
+		columns, rows, err := c.Query(ctx, sql, maxRows)
+		if err != nil {
+			log.Warn().Err(err).Str("sql", sql).Msg("unable to perform query")
+			http.Error(w, "unable to perform query, check logs for more information", http.StatusBadRequest)
+			return
+		}
+		buf, err := json.Marshal(struct {
+			Columns []string       `json:"columns"`
+			Rows    []cassette.Row `json:"rows"`
+		}{
+			Columns: columns,
+			Rows:    rows,
+		})
+		if err != nil {
+			log.Warn().Err(err).Str("sql", sql).Msg("unable to encode data as json")
+			http.Error(w, "unable to perform query, check logs for more information", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Add("Content-Length", strconv.Itoa(len(buf)))
+		w.Header().Add("Content-Type", "application/json; charset=utf-8")
+		w.Write(buf)
+	}
 }
 
 func listAssets(c *cassette.Control) http.HandlerFunc {

@@ -92,6 +92,8 @@ func LoadControlCassette(ctx context.Context, tape string, readwrite bool, enabl
 	return c, nil
 }
 
+func (c *Control) Queryable() bool { return !c.writeable }
+
 func (c *Control) ListRoutes(ctx context.Context) ([]Code, error) {
 	var out []Code
 	rows, err := c.db.QueryContext(ctx, `select r.route, a.content, r.methods
