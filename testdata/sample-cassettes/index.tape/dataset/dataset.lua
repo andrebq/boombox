@@ -4,4 +4,4 @@ add_datasource('germany-wind-energy.csv', {
   originalSource='https://open-power-system-data.org/'
 })
 
-load_csv('germany-wind-energy.csv', 'wind')
+load_csv('wind', 'germany-wind-energy.csv')

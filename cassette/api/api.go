@@ -145,12 +145,19 @@ func serveAsset(c *cassette.Control, assetPath string) http.HandlerFunc {
 		if err != nil {
 			http.Error(w, "unable to fetch desired asset, server is mis-behaving", http.StatusBadGateway)
 		}
+		if mt == "text/x-lua" {
+			mt = "text/plain"
+		}
 		// TODO: this is absurdly stupid since we could extract this info directly from the database
 		// but I'm on a rush to get this working...
 		if utf8.Valid(buf.Bytes()) {
 			w.Header().Add("Content-Type", fmt.Sprintf("%v; charset=utf-8", mt))
 		} else {
 			w.Header().Add("Content-Type", mt)
+		}
+		switch mt {
+		case "text/plain":
+			w.Header().Add("Content-Disposition", "inline")
 		}
 		w.Header().Add("Content-Length", strconv.Itoa(buf.Len()))
 		// TODO: think about some caching with ETags and stuff
