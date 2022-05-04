@@ -3,9 +3,10 @@ package api
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"net/http"
 	"path"
 	"sort"
@@ -97,6 +98,10 @@ func AsHandler(ctx context.Context, c *cassette.Control) (http.Handler, error) {
 }
 
 func queryCassette(ctx context.Context, c *cassette.Control) http.HandlerFunc {
+	const (
+		OneMegabyte = 1_000_00
+		MaxBuffer   = OneMegabyte
+	)
 	log := logutil.GetOrDefault(ctx).Sample(zerolog.Often)
 	// TODO: this endpoint should ran under a separate user and process
 	// but for now, let's make everything available under the same process (everything is readonly so far...)
@@ -112,34 +117,29 @@ func queryCassette(ctx context.Context, c *cassette.Control) http.HandlerFunc {
 			http.Error(w, "missing sql parameter", http.StatusBadRequest)
 			return
 		}
-		maxRows, err := strconv.Atoi(r.FormValue("maxRows"))
-		if err != nil || maxRows > 1000 {
-			maxRows = 1000
+		userMaxBuffer, err := strconv.Atoi(r.FormValue("maxBuffer"))
+		if err != nil || userMaxBuffer > MaxBuffer {
+			userMaxBuffer = 1000
 		}
 		// TODO: handle sql query parameters, for now, deal with unparameterized queries
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
-		columns, rows, err := c.Query(ctx, sql, maxRows)
+		var buf bytes.Buffer
+		err = c.Query(ctx, &buf, userMaxBuffer, sql)
 		if err != nil {
 			log.Warn().Err(err).Str("sql", sql).Msg("unable to perform query")
-			http.Error(w, "unable to perform query, check logs for more information", http.StatusBadRequest)
+			var writeOverflow cassette.WriteOverflow
+			if errors.As(err, &writeOverflow) {
+				// TODO: in theory, the request is small but the response is too big, not good but also not horribly incorrect
+				http.Error(w, "unable to perform query, your query returns too much data", http.StatusRequestEntityTooLarge)
+			} else {
+				http.Error(w, "unable to perform query, check logs for more information", http.StatusBadRequest)
+			}
 			return
 		}
-		buf, err := json.Marshal(struct {
-			Columns []string       `json:"columns"`
-			Rows    []cassette.Row `json:"rows"`
-		}{
-			Columns: columns,
-			Rows:    rows,
-		})
-		if err != nil {
-			log.Warn().Err(err).Str("sql", sql).Msg("unable to encode data as json")
-			http.Error(w, "unable to perform query, check logs for more information", http.StatusInternalServerError)
-			return
-		}
-		w.Header().Add("Content-Length", strconv.Itoa(len(buf)))
+		w.Header().Add("Content-Length", strconv.Itoa(len(buf.Bytes())))
 		w.Header().Add("Content-Type", "application/json; charset=utf-8")
-		w.Write(buf)
+		io.Copy(w, &buf)
 	}
 }
 

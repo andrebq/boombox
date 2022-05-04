@@ -3,6 +3,7 @@ package cassette
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +18,12 @@ import (
 )
 
 type (
+	limitedWriter struct {
+		dest       io.Writer
+		maxBytes   int
+		totalBytes int
+	}
+
 	Control struct {
 		db     *sql.DB
 		datadb *sql.DB
@@ -219,22 +226,43 @@ func (c *Control) ToggleCodebase(ctx context.Context, assetPath string, enable b
 	return nil
 }
 
-func (c *Control) Query(ctx context.Context, query string, limit int, args ...interface{}) ([]string, []Row, error) {
+func (c *Control) Query(ctx context.Context, out io.Writer, maxSize int, query string, args ...interface{}) error {
+	const OneMegabyte = 1_000_000
 	if c.writeable {
 		// TODO: querying a writable cassette is SOOOO wrong that I am considering a panic instead!
 		// afterall, a Queryable Cassette should run alone on its own process...
-		return nil, nil, CannotQuery{}
+		return CannotQuery{}
 	}
+	if maxSize > OneMegabyte || maxSize < 0 {
+		maxSize = OneMegabyte
+	}
+	out = &limitedWriter{dest: out, maxBytes: maxSize}
+
 	rows, err := c.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, nil, QueryError{Query: query, cause: err, Params: args}
+		return QueryError{Query: query, cause: err, Params: args}
 	}
 	defer rows.Close()
 	columns, err := rows.Columns()
 	if err != nil {
-		return nil, nil, QueryError{Query: query, cause: err, Params: args}
+		return QueryError{Query: query, cause: err, Params: args}
 	}
-	var output []Row
+	_, err = io.WriteString(out, `{"columns":`)
+	if err != nil {
+		return err
+	}
+
+	enc := json.NewEncoder(out)
+	err = enc.Encode(columns)
+	if err != nil {
+		return err
+	}
+	_, err = io.WriteString(out, `,"rows": [`)
+	if err != nil {
+		return err
+	}
+
+	first := true
 	for rows.Next() {
 		r := make(Row, len(columns))
 		scanTarget := make([]interface{}, len(r))
@@ -243,11 +271,22 @@ func (c *Control) Query(ctx context.Context, query string, limit int, args ...in
 		}
 		err = rows.Scan(scanTarget...)
 		if err != nil {
-			return nil, nil, QueryError{Query: query, cause: err, Params: args}
+			return QueryError{Query: query, cause: err, Params: args}
 		}
-		output = append(output, r)
+		if !first {
+			_, err = io.WriteString(out, ",")
+			if err != nil {
+				return err
+			}
+		}
+		first = false
+		err = enc.Encode(r)
+		if err != nil {
+			return err
+		}
 	}
-	return columns, output, nil
+	_, err = io.WriteString(out, "]}")
+	return err
 }
 
 func (c *Control) nextSeq(ctx context.Context, seq string) (int64, error) {
@@ -338,4 +377,21 @@ func (c *Control) Close() error {
 		c.datadb.Close()
 	}
 	return err
+}
+
+func (lw *limitedWriter) Write(buf []byte) (int, error) {
+	if overshoot := lw.overshoot(len(buf)); overshoot > 0 {
+		return 0, WriteOverflow{
+			Total: lw.totalBytes,
+			Max:   lw.maxBytes,
+			Next:  len(buf),
+		}
+	}
+	n, err := lw.dest.Write(buf)
+	lw.totalBytes += n
+	return 0, err
+}
+
+func (lw limitedWriter) overshoot(n int) int {
+	return (lw.totalBytes + n) - lw.maxBytes
 }

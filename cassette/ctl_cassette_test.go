@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestQueryCassette(t *testing.T) {
@@ -24,7 +27,11 @@ func TestQueryCassette(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = c.Query(ctx, "select path, mime_type from assets", 1)
+	_, err = c.StoreAsset(ctx, "info.html", "text/html", "<h1>it works</h1>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = c.Query(ctx, io.Discard, 0, "select path, mime_type from assets")
 	if err == nil {
 		t.Fatal("A writable Cassette cannot be queried, but it was!")
 	}
@@ -35,13 +42,20 @@ func TestQueryCassette(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	columns, data, err := c.Query(ctx, "select path, mime_type from assets", 1)
+	expectedJSON := `{"columns":["path","mime_type"]
+,"rows": [["index.html","text/html"]
+,["info.html","text/html"]
+]}`
+	var buf bytes.Buffer
+	err = c.Query(ctx, &buf, -1, "select path, mime_type from assets")
 	if err != nil {
 		t.Fatal(err)
-	} else if !reflect.DeepEqual(columns, []string{"path", "mime_type"}) {
-		t.Fatalf("Invalid column list, got %v", columns)
-	} else if !reflect.DeepEqual(data, []Row{{"index.html", "text/html"}}) {
-		t.Fatalf("Invalid data, got %v", data)
+	} else {
+		require.JSONEq(t, expectedJSON, buf.String(), "JSON objects should be equal")
+	}
+	err = c.Query(ctx, io.Discard, 11, "select path, mime_type from assets")
+	if !errors.Is(err, WriteOverflow{Total: 11, Max: 11, Next: 21}) {
+		t.Fatalf("Error should be WriteOverflow, got: %#v", err)
 	}
 	c.Close()
 }

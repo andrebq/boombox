@@ -26,6 +26,12 @@ type (
 		Params []interface{}
 		cause  error
 	}
+
+	WriteOverflow struct {
+		Total int
+		Max   int
+		Next  int
+	}
 )
 
 func (i InvalidTextContent) Error() string {
@@ -55,4 +61,8 @@ func (q QueryError) Error() string {
 
 func (q QueryError) Unwrap() error {
 	return q.cause
+}
+
+func (o WriteOverflow) Error() string {
+	return fmt.Sprintf("output buffer overflow, max: %v, total: %v, next: %v", o.Max, o.Total, o.Next)
 }
