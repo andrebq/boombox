@@ -32,6 +32,17 @@ type (
 		Max   int
 		Next  int
 	}
+
+	ReadonlyCassette  struct{}
+	DatasetNotAllowed struct{}
+
+	InvalidTableName struct {
+		Name string
+	}
+
+	InvalidColumnName struct {
+		Name string
+	}
 )
 
 func (i InvalidTextContent) Error() string {
@@ -65,4 +76,19 @@ func (q QueryError) Unwrap() error {
 
 func (o WriteOverflow) Error() string {
 	return fmt.Sprintf("output buffer overflow, max: %v, total: %v, next: %v", o.Max, o.Total, o.Next)
+}
+
+func (r ReadonlyCassette) Error() string {
+	return "cassette is opened in read-only mode"
+}
+
+func (r InvalidTableName) Error() string {
+	return fmt.Sprintf("table %v does not conform to the required identifier names (%v)", r.Name, reValidIdentifiers.String())
+}
+
+func (r InvalidColumnName) Error() string {
+	return fmt.Sprintf("column %v does not conform to the required identifier names (%v)", r.Name, reValidIdentifiers.String())
+}
+func (d DatasetNotAllowed) Error() string {
+	return fmt.Sprintf("cassette is not configured as a data cassette")
 }

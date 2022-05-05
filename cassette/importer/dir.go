@@ -2,14 +2,20 @@ package importer
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"io/ioutil"
+	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/andrebq/boombox/cassette"
+	"github.com/andrebq/boombox/internal/logutil"
+	"github.com/andrebq/boombox/internal/lua/ltoj"
+	gluamapper "github.com/yuin/gluamapper"
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -28,6 +34,13 @@ type (
 		methods []string
 		route   string
 		asset   string
+	}
+)
+
+var (
+	defaultMapperOptions = gluamapper.Option{
+		NameFunc: gluamapper.Id,
+		TagName:  "gluamapper",
 	}
 )
 
@@ -57,10 +70,10 @@ func Directory(ctx context.Context, target *cassette.Control, base string, allow
 		}
 		// all assets must be relative
 		assetPath := path[len(base)+1:]
+		// datasets undergo a different processing logic
 		if strings.HasPrefix(filepath.ToSlash(assetPath), "dataset/") {
-			// datasets undergo a different processing logic
-			datasets = append(datasets, assetPath)
 			if filepath.Base(path) == "dataset.lua" {
+				datasets = append(datasets, assetPath)
 				// dataset.lua is considered a public asset as it describes
 				// the relational data available in the cassette.
 				//
@@ -98,6 +111,83 @@ func Directory(ctx context.Context, target *cassette.Control, base string, allow
 		if err != nil {
 			return err
 		}
+	}
+	for _, d := range datasets {
+		err := importDataset(ctx, target, base, d)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func importDataset(ctx context.Context, target *cassette.Control, base string, dataset string) error {
+	log := logutil.GetOrDefault(ctx).With().Str("dirname", base).Str("asset", dataset).Logger()
+	l := lua.NewState(lua.Options{SkipOpenLibs: true})
+	datasources := map[string][]byte{}
+	datasetDir := filepath.Dir(filepath.Join(base, dataset))
+	tableAssetDir := path.Dir(filepath.ToSlash(dataset))
+	l.SetField(l.G.Global, "add_datasource", l.NewFunction(func(l *lua.LState) int {
+		srcFile := path.Clean(l.CheckString(1))
+		log = log.With().Str("srcFile", srcFile).Logger()
+		fullpath := filepath.Join(datasetDir, filepath.FromSlash(srcFile))
+		if stat, err := os.Lstat(fullpath); err != nil {
+			log.Error().Err(err).Msg("Unable to inspect datasource file")
+			l.RaiseError("unable to load datasource: %v", l.CheckString(1))
+		} else if stat.IsDir() {
+			l.RaiseError("unable to load datasource: %v, cannot process directories", l.CheckString(1))
+		}
+		descriptor := ltoj.ToJSONValue(l.CheckTable(2)).(map[string]interface{})
+		descriptor["importedFromFile"] = srcFile
+		buf, err := json.Marshal(descriptor)
+		if err != nil {
+			log.Error().Err(err).Msg("uanble to convert datasource config to JSON")
+			l.RaiseError("unable to load datasource: %v, error encoding as JSON", l.CheckString(1))
+		}
+		datasources[srcFile] = buf
+		l.Push(lua.LTrue)
+		return 1
+	}))
+	l.SetField(l.G.Global, "load_csv", l.NewFunction(func(l *lua.LState) int {
+		srcFile := path.Clean(l.CheckString(1))
+		log = log.With().Str("srcFile", srcFile).Logger()
+		fullpath := filepath.Join(datasetDir, filepath.FromSlash(srcFile))
+		if stat, err := os.Lstat(fullpath); err != nil {
+			log.Error().Err(err).Msg("Unable to inspect datasource file")
+			l.RaiseError("unable to load datasource: %v", l.CheckString(1))
+		} else if stat.IsDir() {
+			l.RaiseError("unable to load datasource: %v, cannot process directories", l.CheckString(1))
+		}
+		tableName := l.CheckString(2)
+		reader, err := os.Open(fullpath)
+		if err != nil {
+			log.Error().Err(err).Msg("unable to open datasource file")
+			l.RaiseError("unable to load datasource: %v, file could not be opened for read", l.CheckString(1))
+		}
+		defer reader.Close()
+		rows, err := target.ImportCSVDataset(ctx, tableName, reader)
+		if err != nil {
+			log.Error().Err(err).Msg("unable to import CSV into cassete")
+			l.RaiseError("unable to load datasource: %v, cassette.ImportCSVDataset failed", l.CheckString(1))
+		}
+		// now that we loaded the table
+		// let's map it to an asset path, so discovery is easier
+		_, err = target.StoreAsset(ctx, path.Join(tableAssetDir, fmt.Sprintf("%v.json", tableName)), "application/json", string(datasources[srcFile]))
+		if err != nil {
+			log.Error().Err(err).Msg("Unable to import CSV into casset")
+			l.RaiseError("unable to load datasource: %v, could not store table descriptor as asset", srcFile)
+		}
+		l.Push(lua.LNumber(float64(rows)))
+		return 1
+	}))
+
+	code, err := ioutil.ReadFile(filepath.Join(base, dataset))
+	if err != nil {
+		return err
+	}
+	err = l.DoString(string(code))
+	if err != nil {
+		return err
 	}
 	return nil
 }

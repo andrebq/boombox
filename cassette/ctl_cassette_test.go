@@ -14,6 +14,64 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestIdentifiers(t *testing.T) {
+	type testCase struct {
+		ident string
+		valid bool
+	}
+	for _, tc := range []testCase{
+		{"wind", true},
+		{"_abc1234", true},
+		{"abc-123", false},
+		{"1234", false},
+		{"te st", false},
+	} {
+		valid := reValidIdentifiers.MatchString(tc.ident)
+		if valid != tc.valid {
+			t.Errorf("identifier reValidIdentifiers.MatchString(%v) should return %v but got %v", tc.ident, tc.valid, valid)
+		}
+	}
+}
+
+func TestImportCSV(t *testing.T) {
+	csv := `"text","integer","real"
+"text", 1234, 1234.5`
+	tape, cleanup := tempTape(t, "test")
+	t.Logf("Tape: %v", tape)
+	_ = cleanup
+	defer cleanup()
+
+	ctx := context.Background()
+	c, err := LoadControlCassette(ctx, tape, true, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	rows, err := c.ImportCSVDataset(ctx, "sample_data", bytes.NewBufferString(csv))
+	if err != nil {
+		t.Fatal(err)
+	} else if rows != 1 {
+		t.Fatalf("should have imported %v rows, got %v", 1, rows)
+	}
+
+	if err := c.Close(); err != nil {
+		t.Fatal(err)
+	}
+	c, err = LoadControlCassette(ctx, tape, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedJSON := `{"columns":["text","integer","real"]
+,"rows": [["text", 1234, 1234.5]]}`
+	var buf bytes.Buffer
+	err = c.Query(ctx, &buf, -1, "select text, integer, real from dataset.sample_data")
+	if err != nil {
+		t.Fatal(err)
+	} else {
+		require.JSONEq(t, expectedJSON, buf.String(), "JSON objects should be equal")
+	}
+}
+
 func TestQueryCassette(t *testing.T) {
 	tape, cleanup := tempTape(t, "test")
 	defer cleanup()

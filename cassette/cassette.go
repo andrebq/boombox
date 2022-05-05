@@ -1,8 +1,10 @@
 package cassette
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +12,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -45,6 +49,7 @@ type (
 
 var (
 	errInvalidCodebaseAsset = errors.New("codebase assets must be stored under codebase/ and must have a valid lua mime-type")
+	reValidIdentifiers      = regexp.MustCompile(`^[a-zA-Z_][_a-zA-Z0-9]{0,127}$`)
 )
 
 func openCassetteDatabase(ctx context.Context, tape string, dbname string, readwrite bool) (*sql.DB, string, error) {
@@ -88,13 +93,13 @@ func LoadControlCassette(ctx context.Context, tape string, readwrite bool, enabl
 			c.Close()
 			return nil, err
 		}
+		c.datadb = dataconn
+		c.dataPath = dataPath
 		err = c.initData(ctx)
 		if err != nil {
 			c.Close()
 			return nil, err
 		}
-		c.datadb = dataconn
-		c.dataPath = dataPath
 	}
 	return c, nil
 }
@@ -224,6 +229,110 @@ func (c *Control) ToggleCodebase(ctx context.Context, assetPath string, enable b
 		return fmt.Errorf("unable to change state of asset %v in codebase, cause %w", assetPath, err)
 	}
 	return nil
+}
+
+func (c *Control) ImportCSVDataset(ctx context.Context, table string, csvStream io.Reader) (int64, error) {
+	// TODO: this method is HUGE! break it down to make things easier!
+	if !c.writeable {
+		return 0, ReadonlyCassette{}
+	}
+	if c.datadb == nil {
+		return 0, DatasetNotAllowed{}
+	}
+	if err := validDatasetTable(table); err != nil {
+		return 0, err
+	}
+	reader := csv.NewReader(csvStream)
+	reader.LazyQuotes = true
+	reader.TrimLeadingSpace = true
+
+	header, err := reader.Read()
+	if err != nil {
+		return 0, fmt.Errorf("unable to import %v, cause %w", table, err)
+	}
+	for _, h := range header {
+		if err := validDatasetColumn(h); err != nil {
+			return 0, err
+		}
+	}
+	firstRow, err := reader.Read()
+	if err != nil {
+		return 0, fmt.Errorf("unable to import %v, cause %w", table, err)
+	}
+	rowTypes := make([]string, len(firstRow))
+	for i, d := range firstRow {
+		if _, err := strconv.ParseInt(d, 10, 64); err == nil {
+			rowTypes[i] = "integer"
+		} else if _, err := strconv.ParseFloat(d, 64); err == nil {
+			rowTypes[i] = "real"
+		} else {
+			rowTypes[i] = "text"
+		}
+	}
+	createTable := bytes.Buffer{}
+	fmt.Fprintf(&createTable, `create table if not exists %v(`, table)
+	for i, h := range header {
+		if i > 0 {
+			fmt.Fprintf(&createTable, ",")
+		}
+		fmt.Fprintf(&createTable, "%v %v", h, rowTypes[i])
+	}
+	fmt.Fprintf(&createTable, ")")
+	_, err = c.datadb.ExecContext(ctx, createTable.String())
+	if err != nil {
+		return 0, fmt.Errorf("unable to import %v, cause %w", table, err)
+	}
+	strToTableType := func(val string, colType string) (interface{}, error) {
+		switch colType {
+		case "integer":
+			v, err := strconv.ParseInt(val, 10, 64)
+			return v, err
+		case "real":
+			v, err := strconv.ParseFloat(val, 64)
+			return v, err
+		}
+		return val, nil
+	}
+	castRow := func(row []string, aux []interface{}) error {
+		for i, v := range row {
+			var err error
+			aux[i], err = strToTableType(v, rowTypes[i])
+			if err != nil {
+				return fmt.Errorf("unable to parse %v as %v, cause %w", v, rowTypes[i], err)
+			}
+		}
+		return nil
+	}
+	totalRows := int64(0)
+	insertStmt := fmt.Sprintf("insert into %v(%v) values(?%v)", table, strings.Join(header, ","), strings.Repeat(",?", len(header)-1))
+	aux := make([]interface{}, len(header))
+	insertRow := func(row []string) error {
+		err := castRow(row, aux)
+		if err != nil {
+			return err
+		}
+		_, err = c.datadb.ExecContext(ctx, insertStmt, aux...)
+		if err != nil {
+			return err
+		}
+		totalRows++
+		return nil
+	}
+	err = insertRow(firstRow)
+	if err != nil {
+		return 0, fmt.Errorf("unable to import %v, cause %w", table, err)
+	}
+	reader.ReuseRecord = true
+	for {
+		row, err := reader.Read()
+		if errors.Is(err, io.EOF) {
+			return totalRows, nil
+		}
+		err = insertRow(row)
+		if err != nil {
+			return 0, fmt.Errorf("unable to import %v, cause %w", table, err)
+		}
+	}
 }
 
 func (c *Control) Query(ctx context.Context, out io.Writer, maxSize int, query string, args ...interface{}) error {
@@ -394,4 +503,18 @@ func (lw *limitedWriter) Write(buf []byte) (int, error) {
 
 func (lw limitedWriter) overshoot(n int) int {
 	return (lw.totalBytes + n) - lw.maxBytes
+}
+
+func validDatasetTable(name string) error {
+	if !reValidIdentifiers.MatchString(name) {
+		return InvalidTableName{Name: name}
+	}
+	return nil
+}
+
+func validDatasetColumn(name string) error {
+	if !reValidIdentifiers.MatchString(name) {
+		return InvalidColumnName{Name: name}
+	}
+	return nil
 }

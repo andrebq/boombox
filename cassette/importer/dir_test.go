@@ -29,6 +29,7 @@ func TestImportDirectory(t *testing.T) {
 		"codebase/index.lua",
 		"data.json",
 		"dataset/dataset.lua",
+		"dataset/wind.json",
 		"index.html",
 		"script.js",
 		"style.css",
