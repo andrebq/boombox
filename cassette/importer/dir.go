@@ -124,7 +124,7 @@ func Directory(ctx context.Context, target *cassette.Control, base string, allow
 func importDataset(ctx context.Context, target *cassette.Control, base string, dataset string) error {
 	log := logutil.GetOrDefault(ctx).With().Str("dirname", base).Str("asset", dataset).Logger()
 	l := lua.NewState(lua.Options{SkipOpenLibs: true})
-	datasources := map[string][]byte{}
+	datasources := map[string]map[string]interface{}{}
 	datasetDir := filepath.Dir(filepath.Join(base, dataset))
 	tableAssetDir := path.Dir(filepath.ToSlash(dataset))
 	l.SetField(l.G.Global, "add_datasource", l.NewFunction(func(l *lua.LState) int {
@@ -139,12 +139,7 @@ func importDataset(ctx context.Context, target *cassette.Control, base string, d
 		}
 		descriptor := ltoj.ToJSONValue(l.CheckTable(2)).(map[string]interface{})
 		descriptor["importedFromFile"] = srcFile
-		buf, err := json.Marshal(descriptor)
-		if err != nil {
-			log.Error().Err(err).Msg("uanble to convert datasource config to JSON")
-			l.RaiseError("unable to load datasource: %v, error encoding as JSON", l.CheckString(1))
-		}
-		datasources[srcFile] = buf
+		datasources[srcFile] = descriptor
 		l.Push(lua.LTrue)
 		return 1
 	}))
@@ -165,14 +160,25 @@ func importDataset(ctx context.Context, target *cassette.Control, base string, d
 			l.RaiseError("unable to load datasource: %v, file could not be opened for read", l.CheckString(1))
 		}
 		defer reader.Close()
-		rows, err := target.ImportCSVDataset(ctx, tableName, reader)
+		createStmt, rows, err := target.ImportCSVDataset(ctx, tableName, reader)
 		if err != nil {
 			log.Error().Err(err).Msg("unable to import CSV into cassete")
 			l.RaiseError("unable to load datasource: %v, cassette.ImportCSVDataset failed", l.CheckString(1))
 		}
+
+		descriptor := datasources[srcFile]
+		descriptor["ddl"] = map[string]string{
+			"create": createStmt,
+		}
+		buf, err := json.Marshal(descriptor)
+		if err != nil {
+			log.Error().Err(err).Msg("uanble to convert datasource config to JSON")
+			l.RaiseError("unable to load datasource: %v, error encoding as JSON", l.CheckString(1))
+		}
+
 		// now that we loaded the table
 		// let's map it to an asset path, so discovery is easier
-		_, err = target.StoreAsset(ctx, path.Join(tableAssetDir, fmt.Sprintf("%v.json", tableName)), "application/json", string(datasources[srcFile]))
+		_, err = target.StoreAsset(ctx, path.Join(tableAssetDir, fmt.Sprintf("%v.json", tableName)), "application/json", string(buf))
 		if err != nil {
 			log.Error().Err(err).Msg("Unable to import CSV into casset")
 			l.RaiseError("unable to load datasource: %v, could not store table descriptor as asset", srcFile)

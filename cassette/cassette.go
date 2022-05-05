@@ -231,16 +231,16 @@ func (c *Control) ToggleCodebase(ctx context.Context, assetPath string, enable b
 	return nil
 }
 
-func (c *Control) ImportCSVDataset(ctx context.Context, table string, csvStream io.Reader) (int64, error) {
+func (c *Control) ImportCSVDataset(ctx context.Context, table string, csvStream io.Reader) (string, int64, error) {
 	// TODO: this method is HUGE! break it down to make things easier!
 	if !c.writeable {
-		return 0, ReadonlyCassette{}
+		return "", 0, ReadonlyCassette{}
 	}
 	if c.datadb == nil {
-		return 0, DatasetNotAllowed{}
+		return "", 0, DatasetNotAllowed{}
 	}
 	if err := validDatasetTable(table); err != nil {
-		return 0, err
+		return "", 0, err
 	}
 	reader := csv.NewReader(csvStream)
 	reader.LazyQuotes = true
@@ -248,16 +248,16 @@ func (c *Control) ImportCSVDataset(ctx context.Context, table string, csvStream 
 
 	header, err := reader.Read()
 	if err != nil {
-		return 0, fmt.Errorf("unable to import %v, cause %w", table, err)
+		return "", 0, fmt.Errorf("unable to import %v, cause %w", table, err)
 	}
 	for _, h := range header {
 		if err := validDatasetColumn(h); err != nil {
-			return 0, err
+			return "", 0, err
 		}
 	}
 	firstRow, err := reader.Read()
 	if err != nil {
-		return 0, fmt.Errorf("unable to import %v, cause %w", table, err)
+		return "", 0, fmt.Errorf("unable to import %v, cause %w", table, err)
 	}
 	rowTypes := make([]string, len(firstRow))
 	for i, d := range firstRow {
@@ -280,7 +280,7 @@ func (c *Control) ImportCSVDataset(ctx context.Context, table string, csvStream 
 	fmt.Fprintf(&createTable, ")")
 	_, err = c.datadb.ExecContext(ctx, createTable.String())
 	if err != nil {
-		return 0, fmt.Errorf("unable to import %v, cause %w", table, err)
+		return "", 0, fmt.Errorf("unable to import %v, cause %w", table, err)
 	}
 	strToTableType := func(val string, colType string) (interface{}, error) {
 		switch colType {
@@ -320,17 +320,17 @@ func (c *Control) ImportCSVDataset(ctx context.Context, table string, csvStream 
 	}
 	err = insertRow(firstRow)
 	if err != nil {
-		return 0, fmt.Errorf("unable to import %v, cause %w", table, err)
+		return "", 0, fmt.Errorf("unable to import %v, cause %w", table, err)
 	}
 	reader.ReuseRecord = true
 	for {
 		row, err := reader.Read()
 		if errors.Is(err, io.EOF) {
-			return totalRows, nil
+			return string(createTable.Bytes()), totalRows, nil
 		}
 		err = insertRow(row)
 		if err != nil {
-			return 0, fmt.Errorf("unable to import %v, cause %w", table, err)
+			return "", 0, fmt.Errorf("unable to import %v, cause %w", table, err)
 		}
 	}
 }

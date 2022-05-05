@@ -99,7 +99,7 @@ func AsHandler(ctx context.Context, c *cassette.Control) (http.Handler, error) {
 
 func queryCassette(ctx context.Context, c *cassette.Control) http.HandlerFunc {
 	const (
-		OneMegabyte = 1_000_00
+		OneMegabyte = 1_000_000
 		MaxBuffer   = OneMegabyte
 	)
 	log := logutil.GetOrDefault(ctx).Sample(zerolog.Often)
@@ -119,7 +119,7 @@ func queryCassette(ctx context.Context, c *cassette.Control) http.HandlerFunc {
 		}
 		userMaxBuffer, err := strconv.Atoi(r.FormValue("maxBuffer"))
 		if err != nil || userMaxBuffer > MaxBuffer {
-			userMaxBuffer = 1000
+			userMaxBuffer = MaxBuffer
 		}
 		// TODO: handle sql query parameters, for now, deal with unparameterized queries
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)

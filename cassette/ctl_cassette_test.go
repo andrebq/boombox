@@ -47,11 +47,14 @@ func TestImportCSV(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	rows, err := c.ImportCSVDataset(ctx, "sample_data", bytes.NewBufferString(csv))
+	expectedCreateStmt := "create table if not exists sample_data(text text,integer integer,real real)"
+	createStmt, rows, err := c.ImportCSVDataset(ctx, "sample_data", bytes.NewBufferString(csv))
 	if err != nil {
 		t.Fatal(err)
 	} else if rows != 1 {
 		t.Fatalf("should have imported %v rows, got %v", 1, rows)
+	} else if createStmt != expectedCreateStmt {
+		t.Errorf("Create stmt should be (%v) got (%v)", expectedCreateStmt, createStmt)
 	}
 
 	if err := c.Close(); err != nil {
