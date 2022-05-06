@@ -34,7 +34,9 @@ func toLuaMap(L *lua.LState, val reflect.Value) *lua.LTable {
 	t := L.NewTable()
 	iter := val.MapRange()
 	for iter.Next() {
-		L.SetTable(t, toLuaValue(L, iter.Key()), toLuaValue(L, iter.Value()))
+		lk := toLuaValue(L, iter.Key())
+		lv := toLuaValue(L, iter.Value())
+		L.SetTable(t, lk, lv)
 	}
 	return t
 }
@@ -56,7 +58,7 @@ func toLuaSlice(L *lua.LState, val reflect.Value) *lua.LTable {
 	t := L.NewTable()
 	sz := val.Len()
 	for i := 0; i < sz; i++ {
-		L.RawSetInt(t, i, toLuaValue(L, val.Index(i)))
+		L.RawSetInt(t, i+1, toLuaValue(L, val.Index(i)))
 	}
 	return t
 }
@@ -95,7 +97,6 @@ func toLuaSliceFast(L *lua.LState, val reflect.Value) *lua.LTable {
 }
 
 func toLuaValue(L *lua.LState, v reflect.Value) lua.LValue {
-	println("str: ", v.String(), "kind", v.Kind().String())
 	switch v.Kind() {
 	case reflect.Float64, reflect.Float32:
 		return lua.LNumber(v.Float())

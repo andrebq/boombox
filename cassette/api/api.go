@@ -18,6 +18,7 @@ import (
 	"github.com/andrebq/boombox/cassette"
 	"github.com/andrebq/boombox/internal/logutil"
 	"github.com/andrebq/boombox/internal/lua/bindings/httplua"
+	"github.com/andrebq/boombox/internal/lua/ltoj"
 	"github.com/julienschmidt/httprouter"
 	"github.com/rs/zerolog"
 	lua "github.com/yuin/gopher-lua"
@@ -181,6 +182,7 @@ func serveDynamicCode(code string) http.HandlerFunc {
 			}
 		}
 		L.PreloadModule("ctx", httplua.OpenServer(w, r))
+		L.PreloadModule("json", ltoj.OpenModule())
 		err := L.DoString(code)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Dynamic page failed with unexpected error:\n%v\n\n\n----\n\n\n%v", err, code), http.StatusBadGateway)
