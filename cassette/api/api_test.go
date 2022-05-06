@@ -12,6 +12,47 @@ import (
 	"github.com/steinfletcher/apitest"
 )
 
+func TestFormParsing(t *testing.T) {
+	ctx := context.Background()
+	cassette, cleanup := tempCassette(ctx, t, "test")
+	defer cleanup()
+	var err error
+	_, err = cassette.StoreAsset(ctx, "codebase/index.lua", "text/x-lua", `
+	local ctx = require('ctx')
+	local to_json = require('json').to_json
+	local res = ctx.res
+	local req = ctx.req
+	local route = req.route_param("route") or "missing"
+	local qs = req.param("qs") or "missing"
+	local form = req.param("form") or "missing"
+	res:write_body(route .. "/" .. qs .. "/" .. form)
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = cassette.ToggleCodebase(ctx, "codebase/index.lua", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = cassette.MapRoute(ctx, []string{"POST"}, "/:route/hello-from-lua", "codebase/index.lua")
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := AsHandler(ctx, cassette)
+	if err != nil {
+		t.Fatal(err)
+	}
+	apitest.New().
+		Handler(handler).
+		Post("/api/from-route/hello-from-lua"). // request
+		Query("qs", "from-qs").
+		FormData("form", "from-form").
+		Expect(t). // expectations
+		Body(`from-route/from-qs/from-form`).
+		Status(http.StatusOK).
+		End()
+}
+
 func TestRequestParsing(t *testing.T) {
 	ctx := context.Background()
 	cassette, cleanup := tempCassette(ctx, t, "test")
