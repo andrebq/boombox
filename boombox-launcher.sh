@@ -5,11 +5,11 @@ set -eou pipefail
 mkdir -p ./localfiles
 
 [[ -f ./localfiles/api.pid ]] && {
-	kill $(cat ./localfiles/api.pid) || true
+	kill $(cat ./localfiles/api.pid) 2> /dev/null || true
 }
 
 [[ -f ./localfiles/query.pid ]] && {
-	kill $(cat ./localfiles/query.pid) || true
+	kill $(cat ./localfiles/query.pid) 2> /dev/null || true
 }
 
 ./dist/boombox serve api -bind localhost:7008 -tape ./dist/index.tape &

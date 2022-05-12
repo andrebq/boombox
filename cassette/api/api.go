@@ -16,6 +16,7 @@ import (
 	"github.com/andrebq/boombox/cassette"
 	"github.com/andrebq/boombox/internal/lua/bindings/httplua"
 	"github.com/andrebq/boombox/internal/lua/ltoj"
+	"github.com/andrebq/boombox/internal/lua/luadefaults"
 	"github.com/julienschmidt/httprouter"
 	lua "github.com/yuin/gopher-lua"
 )
@@ -112,22 +113,7 @@ func serveDynamicCode(code string) http.HandlerFunc {
 		})
 		L.SetContext(r.Context())
 		defer L.Close()
-		for _, pair := range []struct {
-			n string
-			f lua.LGFunction
-		}{
-			{lua.LoadLibName, lua.OpenPackage}, // Must be first
-			{lua.BaseLibName, lua.OpenBase},
-			{lua.TabLibName, lua.OpenTable},
-		} {
-			if err := L.CallByParam(lua.P{
-				Fn:      L.NewFunction(pair.f),
-				NRet:    0,
-				Protect: true,
-			}, lua.LString(pair.n)); err != nil {
-				panic(err)
-			}
-		}
+		luadefaults.InjectDynamicCodeLibs(L)
 		L.PreloadModule("ctx", httplua.OpenServer(w, r))
 		L.PreloadModule("json", ltoj.OpenModule())
 		err := L.DoString(code)
