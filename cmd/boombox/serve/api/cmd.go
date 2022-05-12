@@ -6,6 +6,7 @@ import (
 	"github.com/andrebq/boombox/cassette"
 	capi "github.com/andrebq/boombox/cassette/api"
 	"github.com/andrebq/boombox/internal/httpserver"
+	tplua "github.com/andrebq/boombox/internal/lua/bindings/tapedeck"
 	"github.com/andrebq/boombox/tapedeck"
 	"github.com/andrebq/boombox/tapedeck/api"
 	"github.com/urfave/cli/v2"
@@ -54,7 +55,7 @@ func Cmd() *cli.Command {
 
 			toHandler := capi.AsHandler
 
-			handler, err := api.AsHandler(ctx.Context, deck, nil, toHandler)
+			handler, err := api.AsHandler(ctx.Context, deck, tplua.OpenModule(deck), toHandler)
 			if err != nil {
 				return err
 			}
