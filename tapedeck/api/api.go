@@ -5,16 +5,20 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/andrebq/boombox/cassette/api"
+	"github.com/andrebq/boombox/cassette"
 	"github.com/andrebq/boombox/tapedeck"
 )
 
-func AsHandler(ctx context.Context, d *tapedeck.D) (http.Handler, error) {
+type (
+	ToHandler func(context.Context, *cassette.Control) (http.Handler, error)
+)
+
+func AsHandler(ctx context.Context, d *tapedeck.D, cassetteToHandler ToHandler) (http.Handler, error) {
 	cassettes := d.List()
 	mux := http.NewServeMux()
 	for _, c := range cassettes {
 		prefix := fmt.Sprintf("/%v", c)
-		handler, err := api.AsHandler(ctx, d.Get(c))
+		handler, err := cassetteToHandler(ctx, d.Get(c))
 		if err != nil {
 			return nil, err
 		}
@@ -22,7 +26,7 @@ func AsHandler(ctx context.Context, d *tapedeck.D) (http.Handler, error) {
 	}
 	idx := d.Index()
 	if idx != nil {
-		idxHandler, err := api.AsHandler(ctx, idx)
+		idxHandler, err := cassetteToHandler(ctx, idx)
 		if err != nil {
 			return nil, err
 		}

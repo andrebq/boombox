@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/andrebq/boombox/cassette"
+	"github.com/andrebq/boombox/cassette/api"
 	"github.com/andrebq/boombox/tapedeck"
 	"github.com/steinfletcher/apitest"
 )
@@ -39,7 +40,7 @@ func TestTapedeck(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	handler, err := AsHandler(ctx, deck)
+	handler, err := AsHandler(ctx, deck, api.AsHandler)
 	if err != nil {
 		t.Fatal(err)
 	}

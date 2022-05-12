@@ -7,7 +7,7 @@ build: ./dist
 
 run: build
 	./dist/boombox k7 -f ./dist/index.tape i -dir ./testdata/sample-cassettes/index.tape
-	./dist/boombox serve -tape ./dist/index.tape
+	bash boombox-launcher.sh
 
 test:
 	go test ./...
