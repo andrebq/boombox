@@ -13,7 +13,7 @@ import (
 func TestTapedeck(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	deck, cleanup := testutil.AcquirePopulatedTapedeck(ctx, t)
+	deck, cleanup := testutil.AcquirePopulatedTapedeck(ctx, t, nil)
 	defer cleanup()
 	L := lua.NewState(lua.Options{
 		SkipOpenLibs:        true,

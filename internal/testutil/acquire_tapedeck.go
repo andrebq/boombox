@@ -18,16 +18,28 @@ type (
 	}
 )
 
-func AcquirePopulatedTapedeck(ctx context.Context, t TestLog) (*tapedeck.D, func()) {
+func AcquirePopulatedTapedeck(ctx context.Context, t TestLog, loader func(context.Context, string, *cassette.Control) error) (*tapedeck.D, func()) {
 	people, cleanupPeople := tempQueryCassette(ctx, t, "people", func(ctx context.Context, c *cassette.Control) error {
 		_, _, err := c.ImportCSVDataset(ctx, "people", bytes.NewBufferString(`"name","age"
 "bob",22
 "charlie",44
 "ana",66`))
+		if err != nil {
+			return err
+		}
+		if loader != nil {
+			err = loader(ctx, "people", c)
+		}
 		return err
 	})
 	index, cleanupIndex := tempQueryCassette(ctx, t, "index", func(ctx context.Context, c *cassette.Control) error {
 		_, err := c.StoreAsset(ctx, "index.html", "text/html", `<h1>it works</h1>`)
+		if err != nil {
+			return err
+		}
+		if loader != nil {
+			err = loader(ctx, "index", c)
+		}
 		return err
 	})
 	d := tapedeck.New()

@@ -10,6 +10,8 @@ import (
 
 	"github.com/andrebq/boombox/cassette"
 	"github.com/andrebq/boombox/cassette/api"
+	tplua "github.com/andrebq/boombox/internal/lua/bindings/tapedeck"
+	"github.com/andrebq/boombox/internal/testutil"
 	"github.com/andrebq/boombox/tapedeck"
 	"github.com/steinfletcher/apitest"
 )
@@ -55,6 +57,43 @@ func TestTapedeck(t *testing.T) {
 		Expect(t).
 		Status(http.StatusOK).
 		Body(`from lua`).
+		End()
+}
+
+func TestDynamicPageCasseteQuery(t *testing.T) {
+	ctx := context.Background()
+	deck, cleanup := testutil.AcquirePopulatedTapedeck(ctx, t, func(ctx context.Context, name string, c *cassette.Control) error {
+		if name != "people" {
+			return nil
+		}
+
+		if _, err := c.StoreAsset(ctx, "codebase/peeps.lua", "application/x-lua", `
+	local deck = require('tapedeck')
+	local json = require('json')
+	local res = require('ctx').res
+	local result = deck.load('people'):query('select name from dataset.people')
+	res:write_body(json.to_json(result))
+	`); err != nil {
+			return err
+		}
+		if err := c.ToggleCodebase(ctx, "codebase/peeps.lua", true); err != nil {
+			return err
+		}
+		if err := c.MapRoute(ctx, []string{"GET"}, "/list", "codebase/peeps.lua"); err != nil {
+			t.Fatal(err)
+		}
+		return nil
+	})
+	defer cleanup()
+	handler, err := AsHandler(ctx, deck, tplua.OpenModule(deck), api.AsHandler)
+	if err != nil {
+		t.Fatal(err)
+	}
+	apitest.Handler(handler).
+		Get("/people/api/list").
+		Expect(t).
+		Status(http.StatusOK).
+		Body(`{"columns":["name"],"rows":[["bob"],["charlie"],["ana"]]}`).
 		End()
 }
 
