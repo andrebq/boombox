@@ -45,7 +45,7 @@ func Cmd() *cli.Command {
 
 			toHandler := capi.AsQueryHandler
 
-			handler, err := api.AsHandler(ctx.Context, deck, toHandler)
+			handler, err := api.AsHandler(ctx.Context, deck, nil, toHandler)
 			if err != nil {
 				return err
 			}

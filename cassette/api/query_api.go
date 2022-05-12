@@ -13,10 +13,11 @@ import (
 	"github.com/andrebq/boombox/internal/logutil"
 	"github.com/julienschmidt/httprouter"
 	"github.com/rs/zerolog"
+	lua "github.com/yuin/gopher-lua"
 )
 
 // AsQueryHandler allows arbitrary queries to cassettes
-func AsQueryHandler(ctx context.Context, c *cassette.Control) (http.Handler, error) {
+func AsQueryHandler(ctx context.Context, c *cassette.Control, _ lua.LGFunction) (http.Handler, error) {
 	router := httprouter.New()
 	if !c.Queryable() {
 		return nil, cassette.CannotQuery{}

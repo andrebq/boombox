@@ -40,7 +40,7 @@ func TestTapedeck(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	handler, err := AsHandler(ctx, deck, api.AsHandler)
+	handler, err := AsHandler(ctx, deck, nil, api.AsHandler)
 	if err != nil {
 		t.Fatal(err)
 	}

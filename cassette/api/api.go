@@ -46,7 +46,7 @@ type (
 	}
 )
 
-func AsHandler(ctx context.Context, c *cassette.Control) (http.Handler, error) {
+func AsHandler(ctx context.Context, c *cassette.Control, tapedeckModule lua.LGFunction) (http.Handler, error) {
 	assets, err := c.ListAssets(ctx)
 	if err != nil {
 		return nil, err
@@ -85,7 +85,7 @@ func AsHandler(ctx context.Context, c *cassette.Control) (http.Handler, error) {
 	for _, r := range routes {
 		apiRoute := path.Join("/api", r.Route)
 		for _, m := range r.Methods {
-			router.HandlerFunc(m, apiRoute, serveDynamicCode(r.Code))
+			router.HandlerFunc(m, apiRoute, serveDynamicCode(r.Code, tapedeckModule))
 		}
 	}
 
@@ -103,7 +103,7 @@ func listAssets(c *cassette.Control) http.HandlerFunc {
 	}
 }
 
-func serveDynamicCode(code string) http.HandlerFunc {
+func serveDynamicCode(code string, tapedeckModule lua.LGFunction) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		timeoutCtx, cancel := context.WithTimeout(r.Context(), time.Second*10)
 		defer cancel()
@@ -116,6 +116,9 @@ func serveDynamicCode(code string) http.HandlerFunc {
 		luadefaults.InjectDynamicCodeLibs(L)
 		L.PreloadModule("ctx", httplua.OpenServer(w, r))
 		L.PreloadModule("json", ltoj.OpenModule())
+		if tapedeckModule != nil {
+			L.PreloadModule("tapedeck", tapedeckModule)
+		}
 		err := L.DoString(code)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Dynamic page failed with unexpected error:\n%v\n\n\n----\n\n\n%v", err, code), http.StatusBadGateway)

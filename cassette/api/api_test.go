@@ -38,7 +38,7 @@ func TestFormParsing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := AsHandler(ctx, cassette)
+	handler, err := AsHandler(ctx, cassette, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestRequestParsing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := AsHandler(ctx, cassette)
+	handler, err := AsHandler(ctx, cassette, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestApi(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := AsHandler(ctx, cassette)
+	handler, err := AsHandler(ctx, cassette, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

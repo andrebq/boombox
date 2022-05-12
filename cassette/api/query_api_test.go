@@ -23,7 +23,7 @@ func TestQueryApi(t *testing.T) {
 		return err
 	})
 	defer cleanup()
-	handler, err := AsQueryHandler(ctx, cassette)
+	handler, err := AsQueryHandler(ctx, cassette, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
