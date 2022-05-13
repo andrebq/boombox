@@ -47,6 +47,15 @@ type (
 )
 
 func AsHandler(ctx context.Context, c *cassette.Control, tapedeckModule lua.LGFunction) (http.Handler, error) {
+	if !c.Queryable() {
+		// even though we don't expose query capabilities directly,
+		// AsHandler will not work with cassettes that could be written
+		// as it is not safe to exposed them directly.
+		//
+		// TODO: add the AsPrivilegedHandler to enable a writable cassette
+		// to be queried
+		return nil, cassette.CannotQuery{}
+	}
 	assets, err := c.ListAssets(ctx)
 	if err != nil {
 		return nil, err

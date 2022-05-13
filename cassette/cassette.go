@@ -35,7 +35,8 @@ type (
 		controlPath string
 		dataPath    string
 
-		writeable bool
+		writeable          bool
+		extendedPrivileges bool
 	}
 
 	Code struct {
@@ -396,6 +397,21 @@ func (c *Control) Query(ctx context.Context, out io.Writer, maxSize int, query s
 	}
 	_, err = io.WriteString(out, "]}")
 	return err
+}
+
+func (c *Control) EnablePrivileges() error {
+	if !c.writeable {
+		return ReadonlyCassette{}
+	}
+	c.extendedPrivileges = true
+	return nil
+}
+
+func (c *Control) UnsafeQuery(ctx context.Context, sql string, hasOutput bool, args ...interface{}) ([]Row, error) {
+	if !c.extendedPrivileges {
+		return nil, MissingExtendedPrivileges{}
+	}
+	return nil, errors.New("not implemented")
 }
 
 func (c *Control) nextSeq(ctx context.Context, seq string) (int64, error) {

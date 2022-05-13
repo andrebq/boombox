@@ -43,6 +43,8 @@ type (
 	InvalidColumnName struct {
 		Name string
 	}
+
+	MissingExtendedPrivileges struct{}
 )
 
 func (i InvalidTextContent) Error() string {
@@ -90,5 +92,9 @@ func (r InvalidColumnName) Error() string {
 	return fmt.Sprintf("column %v does not conform to the required identifier names (%v)", r.Name, reValidIdentifiers.String())
 }
 func (d DatasetNotAllowed) Error() string {
-	return fmt.Sprintf("cassette is not configured as a data cassette")
+	return "cassette is not configured as a data cassette"
+}
+
+func (m MissingExtendedPrivileges) Error() string {
+	return "cassette is not configured for extended privileges, operation is not allowed"
 }
