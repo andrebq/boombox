@@ -411,7 +411,36 @@ func (c *Control) UnsafeQuery(ctx context.Context, sql string, hasOutput bool, a
 	if !c.extendedPrivileges {
 		return nil, MissingExtendedPrivileges{}
 	}
-	return nil, errors.New("not implemented")
+	if !hasOutput {
+		_, err := c.db.ExecContext(ctx, sql, args...)
+		if err != nil {
+			err = QueryError{Query: sql, Params: args, cause: err}
+		}
+		return nil, err
+	}
+	dbrows, err := c.db.QueryContext(ctx, sql, args...)
+	if err != nil {
+		return nil, QueryError{Query: sql, Params: args, cause: err}
+	}
+	defer dbrows.Close()
+	cols, err := dbrows.Columns()
+	if err != nil {
+		return nil, QueryError{Query: sql, Params: args, cause: err}
+	}
+	var ret []Row
+	for dbrows.Next() {
+		r := make(Row, len(cols))
+		scanTarget := make([]interface{}, len(r))
+		for i := range scanTarget {
+			scanTarget[i] = &r[i]
+		}
+		err = dbrows.Scan(scanTarget...)
+		if err != nil {
+			return nil, QueryError{Query: sql, cause: err, Params: args}
+		}
+		ret = append(ret, r)
+	}
+	return ret, nil
 }
 
 func (c *Control) nextSeq(ctx context.Context, seq string) (int64, error) {

@@ -18,29 +18,32 @@ import (
 
 func TestTapedeck(t *testing.T) {
 	ctx := context.Background()
-	index, indexDone := tempCassette(ctx, t, "index")
+	index, indexDone := testutil.AcquireCassette(ctx, t, "index", func(ctx context.Context, index *cassette.Control) error {
+		if _, err := index.StoreAsset(ctx, "index.html", "text/html", `<h1>it works</h1>`); err != nil {
+			t.Fatal(err)
+		}
+		return nil
+	})
 	defer indexDone()
-	about, aboutDone := tempCassette(ctx, t, "about")
+	about, aboutDone := testutil.AcquireCassette(ctx, t, "about", func(ctx context.Context, about *cassette.Control) error {
+		if _, err := about.StoreAsset(ctx, "codebase/index.lua", "text/x-lua", `
+	local res = require('ctx').res
+	res:write_body('from lua')
+	`); err != nil {
+			t.Fatal(err)
+		}
+		if err := about.ToggleCodebase(ctx, "codebase/index.lua", true); err != nil {
+			t.Fatal(err)
+		}
+		if err := about.MapRoute(ctx, []string{"GET"}, "/index", "codebase/index.lua"); err != nil {
+			t.Fatal(err)
+		}
+		return nil
+	})
 	defer aboutDone()
 	deck := tapedeck.New()
 	deck.Load("index", index)
 	deck.Load("about", about)
-
-	if _, err := index.StoreAsset(ctx, "index.html", "text/html", `<h1>it works</h1>`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := about.StoreAsset(ctx, "codebase/index.lua", "text/x-lua", `
-	local res = require('ctx').res
-	res:write_body('from lua')
-	`); err != nil {
-		t.Fatal(err)
-	}
-	if err := about.ToggleCodebase(ctx, "codebase/index.lua", true); err != nil {
-		t.Fatal(err)
-	}
-	if err := about.MapRoute(ctx, []string{"GET"}, "/index", "codebase/index.lua"); err != nil {
-		t.Fatal(err)
-	}
 
 	handler, err := AsHandler(ctx, deck, nil, api.AsHandler)
 	if err != nil {
