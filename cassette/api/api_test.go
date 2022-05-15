@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 
@@ -9,6 +10,29 @@ import (
 	"github.com/andrebq/boombox/internal/testutil"
 	"github.com/steinfletcher/apitest"
 )
+
+func TestPrivilegedApp(t *testing.T) {
+	ctx := context.Background()
+	tape, cleanup := testutil.AcquireWritableCassette(ctx, t, "test")
+	defer cleanup()
+	_, err := tape.StoreAsset(ctx, "index.html", "text/html", "<h1>it works</h1>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = AsPrivilegedHandler(ctx, tape, nil)
+	if !errors.Is(err, cassette.MissingExtendedPrivileges{}) {
+		t.Fatalf("Error should be %v got %v", cassette.MissingExtendedPrivileges{}, err)
+	}
+	err = tape.EnablePrivileges()
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := AsPrivilegedHandler(ctx, tape, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	apitest.Handler(handler).Get("/index.html").Expect(t).Body("<h1>it works</h1>").Status(http.StatusOK).End()
+}
 
 func TestFormParsing(t *testing.T) {
 	ctx := context.Background()

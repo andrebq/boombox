@@ -12,7 +12,7 @@ mkdir -p ./localfiles
 	kill $(cat ./localfiles/query.pid) 2> /dev/null || true
 }
 
-./dist/boombox serve api -bind localhost:7008 -tape ./dist/index.tape &
+./dist/boombox serve api public -bind localhost:7008 -tape ./dist/index.tape &
 echo $! > ./localfiles/api.pid
 
 ./dist/boombox serve query -bind localhost:7009 -tape ./dist/index.tape &

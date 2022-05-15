@@ -46,6 +46,13 @@ type (
 	}
 )
 
+func AsPrivilegedHandler(ctx context.Context, c *cassette.Control, tapemodule lua.LGFunction) (http.Handler, error) {
+	if !c.Queryable() && !c.HasPrivileges() {
+		return nil, cassette.MissingExtendedPrivileges{}
+	}
+	return asHandler(ctx, c, tapemodule)
+}
+
 func AsHandler(ctx context.Context, c *cassette.Control, tapedeckModule lua.LGFunction) (http.Handler, error) {
 	if !c.Queryable() {
 		// even though we don't expose query capabilities directly,
@@ -56,6 +63,10 @@ func AsHandler(ctx context.Context, c *cassette.Control, tapedeckModule lua.LGFu
 		// to be queried
 		return nil, cassette.CannotQuery{}
 	}
+	return asHandler(ctx, c, tapedeckModule)
+}
+
+func asHandler(ctx context.Context, c *cassette.Control, tapemodule lua.LGFunction) (http.Handler, error) {
 	assets, err := c.ListAssets(ctx)
 	if err != nil {
 		return nil, err
@@ -94,7 +105,7 @@ func AsHandler(ctx context.Context, c *cassette.Control, tapedeckModule lua.LGFu
 	for _, r := range routes {
 		apiRoute := path.Join("/api", r.Route)
 		for _, m := range r.Methods {
-			router.HandlerFunc(m, apiRoute, serveDynamicCode(r.Code, tapedeckModule))
+			router.HandlerFunc(m, apiRoute, serveDynamicCode(r.Code, tapemodule))
 		}
 	}
 

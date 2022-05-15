@@ -18,6 +18,28 @@ type (
 	}
 )
 
+func AcquireWritableCassette(ctx context.Context, t TestLog, name string) (*cassette.Control, func()) {
+	dir, err := ioutil.TempDir("", "boombox-tests")
+	if err != nil {
+		t.Fatal(err)
+	}
+	abspath := filepath.Join(dir, name)
+	ctl, err := cassette.LoadControlCassette(ctx, abspath, true, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ctl, func() {
+		err := ctl.Close()
+		if err != nil {
+			t.Log("unable to close cassette", err)
+		}
+		err = os.RemoveAll(dir)
+		if err != nil {
+			t.Log("unable to cleanup temp dir", dir)
+		}
+	}
+}
+
 func AcquireCassette(ctx context.Context, t TestLog, name string, loader func(context.Context, *cassette.Control) error) (*cassette.Control, func()) {
 	dir, err := ioutil.TempDir("", "boombox-tests")
 	if err != nil {

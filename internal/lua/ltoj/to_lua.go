@@ -30,6 +30,10 @@ func ToLuaValue(L *lua.LState, val map[string]interface{}) lua.LValue {
 	return toLuaMap(L, reflect.ValueOf(val))
 }
 
+func ToLuaArray(L *lua.LState, val []interface{}) lua.LValue {
+	return toLuaSlice(L, reflect.ValueOf(val))
+}
+
 func toLuaMap(L *lua.LState, val reflect.Value) *lua.LTable {
 	t := L.NewTable()
 	iter := val.MapRange()

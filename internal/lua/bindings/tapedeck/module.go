@@ -12,10 +12,18 @@ import (
 )
 
 func OpenModule(deck *tapedeck.D) func(*lua.LState) int {
+	return openModule(deck, false)
+}
+
+func OpenPrivilegedModule(deck *tapedeck.D) func(*lua.LState) int {
+	return openModule(deck, true)
+}
+
+func openModule(deck *tapedeck.D, moduleHasPrivileges bool) func(*lua.LState) int {
 	return func(L *lua.LState) int {
 		module := L.NewTable()
 		L.SetFuncs(module, map[string]lua.LGFunction{
-			"load": loadTapeDeck(deck),
+			"load": loadTapeDeck(deck, moduleHasPrivileges),
 			"list": listCassettes(deck),
 		})
 		L.Push(module)
@@ -23,14 +31,24 @@ func OpenModule(deck *tapedeck.D) func(*lua.LState) int {
 	}
 }
 
-func loadTapeDeck(d *tapedeck.D) func(*lua.LState) int {
+func loadTapeDeck(d *tapedeck.D, moduleHasPrivileges bool) func(*lua.LState) int {
 	return func(L *lua.LState) int {
 		name := L.CheckString(1)
 		c := d.Get(name)
 		if c == nil {
 			L.RaiseError("Cassette %v not available for use", name)
 		}
-		L.Push(newCassetteObject(L, c))
+		if !c.Queryable() {
+			// this means the cassette could be writable by the module
+			// so now we need to check that the cassette is configured
+			// to allow extended privileges
+			// as well as check if the tapedeck module is configured
+			// with extended privileges
+			if !(c.HasPrivileges() && moduleHasPrivileges) {
+				L.RaiseError("Cannot load cassette %v, module requires privileges but casset does not have them", name)
+			}
+		}
+		L.Push(newCassetteObject(L, c, moduleHasPrivileges))
 		return 1
 	}
 }
@@ -47,11 +65,11 @@ func listCassettes(d *tapedeck.D) func(*lua.LState) int {
 	}
 }
 
-func newCassetteObject(L *lua.LState, c *cassette.Control) *lua.LUserData {
+func newCassetteObject(L *lua.LState, c *cassette.Control, moduleHasPrivileges bool) *lua.LUserData {
 	ud := L.NewUserData()
 	ud.Value = c
 	meta := L.NewTable()
-	L.SetField(meta, "__index", L.SetFuncs(L.NewTable(), map[string]lua.LGFunction{
+	funcTbl := map[string]lua.LGFunction{
 		"query": func(L *lua.LState) int {
 			ctx := L.Context()
 			if ctx == nil {
@@ -93,7 +111,46 @@ func newCassetteObject(L *lua.LState, c *cassette.Control) *lua.LUserData {
 			L.Push(ltoj.ToLuaValue(L, obj))
 			return 1
 		},
-	}))
+	}
+	if moduleHasPrivileges && c.HasPrivileges() {
+		funcTbl["unsafe_query"] = func(L *lua.LState) int {
+			// another huge method!
+			ctx := L.Context()
+			if ctx == nil {
+				L.RaiseError("Cannot perform a cassette query without a context object!")
+			}
+			if _, ok := ctx.Deadline(); !ok {
+				L.RaiseError("Cannot perform a cassette query from a lua.LState not bound to a context with deadline!")
+			}
+			log := logutil.GetOrDefault(ctx)
+			ud := L.CheckUserData(1)
+			if ud.Value != c {
+				L.RaiseError("Invalid condition, cannot query one cassette using another one as parameter!")
+			}
+			sql := L.CheckString(2)
+			var args []interface{}
+			hasOutput := L.CheckBool(3)
+			for i := 4; i < L.GetTop(); i++ {
+				args = append(args, L.CheckString(i))
+			}
+			resultSet, err := c.UnsafeQuery(ctx, sql, hasOutput, args...)
+			if err != nil {
+				log.Error().Err(err).Str("sql", sql).Msg("Unable to perform unsafe query")
+				L.RaiseError("Unable to query cassette")
+			}
+			if !hasOutput {
+				L.Push(L.NewTable())
+				return 1
+			}
+			luaset := L.NewTable()
+			for i, v := range resultSet {
+				L.RawSetInt(luaset, i+1, ltoj.ToLuaArray(L, v))
+			}
+			L.Push(luaset)
+			return 1
+		}
+	}
+	L.SetField(meta, "__index", L.SetFuncs(L.NewTable(), funcTbl))
 	L.SetMetatable(ud, meta)
 	return ud
 }

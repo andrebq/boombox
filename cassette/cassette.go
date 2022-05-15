@@ -105,7 +105,8 @@ func LoadControlCassette(ctx context.Context, tape string, readwrite bool, enabl
 	return c, nil
 }
 
-func (c *Control) Queryable() bool { return !c.writeable }
+func (c *Control) Queryable() bool     { return !c.writeable }
+func (c *Control) HasPrivileges() bool { return c.extendedPrivileges }
 
 func (c *Control) ListRoutes(ctx context.Context) ([]Code, error) {
 	var out []Code
