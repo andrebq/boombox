@@ -3,6 +3,7 @@ module github.com/andrebq/boombox
 go 1.17
 
 require (
+	github.com/allegro/bigcache/v3 v3.0.2
 	github.com/cespare/xxhash/v2 v2.1.2
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/mattn/go-sqlite3 v1.14.12
