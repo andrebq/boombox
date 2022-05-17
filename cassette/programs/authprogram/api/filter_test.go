@@ -15,7 +15,7 @@ import (
 func TestProtect(t *testing.T) {
 	ts := authprogram.InMemoryTokenStore()
 	os.Setenv(authprogram.RootKeyEnvVar, "blmHX4evD5FygUEa3EWxjzuAPF7lC4sKuWBrhgti/20=")
-	keyfn, err := authprogram.KeyFNFromEnv(authprogram.RootKeyEnvVar)
+	keyfn, err := authprogram.KeyFNFromEnv(authprogram.RootKeyEnvVar, os.Getenv, os.Setenv)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -11,9 +11,15 @@ const (
 	RootKeyEnvVar = "BOOMBOX_AUTH_ROOTKEY"
 )
 
-func KeyFNFromEnv(varname string) (KeyFn, error) {
-	val := os.Getenv(varname)
-	os.Setenv(varname, "")
+func KeyFNFromEnv(varname string, getfn func(string) string, setfn func(string, string) error) (KeyFn, error) {
+	if getfn == nil {
+		getfn = os.Getenv
+	}
+	if setfn == nil {
+		setfn = os.Setenv
+	}
+	val := getfn(varname)
+	setfn(varname, "")
 	var rootKey Key
 	sz, err := base64.StdEncoding.Decode(rootKey[:], []byte(val))
 	if err != nil {
