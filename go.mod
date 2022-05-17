@@ -13,6 +13,7 @@ require (
 	github.com/urfave/cli/v2 v2.5.1
 	github.com/yuin/gluamapper v0.0.0-20150323120927-d836955830e7
 	github.com/yuin/gopher-lua v0.0.0-20220428201426-ff834ae8486b
+	golang.org/x/crypto v0.0.0-20211215165025-cf75a172585e
 )
 
 require (
@@ -21,5 +22,6 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
+	golang.org/x/sys v0.0.0-20210809222454-d867a43fc93e // indirect
 	gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c // indirect
 )

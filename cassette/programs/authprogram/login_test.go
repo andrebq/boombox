@@ -11,21 +11,28 @@ import (
 func TestLogin(t *testing.T) {
 	ctx := context.Background()
 	tape, cleanup := testutil.AcquireWritableCassette(ctx, t, "test")
-	defer cleanup()
-	keyfn := func(context.Context) (*Key, error) {
-		var k Key
-		_, err := rand.Read(k[:])
-		if err != nil {
-			return nil, err
-		}
-		return &k, nil
+	if err := tape.EnablePrivileges(); err != nil {
+		t.Fatal(err)
 	}
-	tokens := InMemoryTokenStore()
-	err := Register(ctx, tape, PlainText("user"), PlainText("password"), keyfn)
+	if err := Setup(ctx, tape); err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	var rootKey Key
+	_, err := rand.Read(rootKey[:])
 	if err != nil {
 		t.Fatal(err)
 	}
-	token, err := Login(ctx, tokens, tape, PlainText("user"), PlainText("password"), keyfn)
+	keyfn := func(ctx context.Context, out *Key) error {
+		copy((*out)[:], rootKey[:])
+		return nil
+	}
+	tokens := InMemoryTokenStore()
+	err = Register(ctx, tape, PlainText("user"), PlainText("password"), keyfn, rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := Login(ctx, tokens, tape, PlainText("user"), PlainText("password"), keyfn, rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
