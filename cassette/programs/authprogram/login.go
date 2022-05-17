@@ -12,14 +12,23 @@ import (
 )
 
 type (
+	// These errors have the same error message,
+	// but they have different types to allow proper
+	// error handling by other layers of the app
 	CredMismatch struct{}
-	TokenStore   interface {
+	UserNotFound struct{}
+
+	TokenStore interface {
 		Save(ctx context.Context, token string) error
 		Lookup(ctx context.Context, token string) (bool, error)
 	}
 )
 
 func (c CredMismatch) Error() string {
+	return "authprogram: credentials do not match"
+}
+
+func (c UserNotFound) Error() string {
 	return "authprogram: credentials do not match"
 }
 
@@ -39,7 +48,7 @@ func Login(ctx context.Context, tokens TokenStore, tape *cassette.Control, user,
 	if err != nil {
 		return "", fmt.Errorf("unable to loookup user in __auth table, cause %w", err)
 	} else if len(rows) == 0 {
-		return "", errors.New("user not found")
+		return "", UserNotFound{}
 	}
 
 	passwdHash, err := base64.URLEncoding.DecodeString(fmt.Sprintf("%v", rows[0][0]))
