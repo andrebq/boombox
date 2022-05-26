@@ -28,11 +28,14 @@ func TestRouter(t *testing.T) {
 	ctx := context.Background()
 	queryCalls, _ := url.Parse(queryServer.URL)
 	apiCalls, _ := url.Parse(apiServer.URL)
-	handler := AsHandler(ctx, apiCalls, queryCalls)
+	handler := AsHandler(ctx, apiCalls, queryCalls, nil)
 
 	apitest.Handler(handler).Get("/hello/.query").Expect(t).Status(http.StatusOK).End()
 	apitest.Handler(handler).Get("/index.html").Expect(t).Status(http.StatusOK).End()
 	apitest.Handler(handler).Get("/hello/index.html").Expect(t).Status(http.StatusOK).End()
+
+	// handler is configured to not allow authenticated requests
+	apitest.Handler(handler).Get("/anything").BasicAuth("user", "pass").Expect(t).Status(http.StatusForbidden).End()
 
 	if queryCount != 1 {
 		t.Fatal("Invalid query count: ", queryCount)

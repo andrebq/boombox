@@ -44,7 +44,7 @@ func Cmd() *cli.Command {
 			if err != nil {
 				return err
 			}
-			handler := boomproxy.AsHandler(ctx.Context, apiURL, queryURL)
+			handler := boomproxy.AsHandler(ctx.Context, apiURL, queryURL, nil)
 			if err != nil {
 				return err
 			}

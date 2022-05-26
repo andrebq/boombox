@@ -1,10 +1,14 @@
 package private
 
 import (
+	"errors"
+	"os"
 	"path/filepath"
 
 	"github.com/andrebq/boombox/cassette"
 	capi "github.com/andrebq/boombox/cassette/api"
+	"github.com/andrebq/boombox/cassette/programs/authprogram"
+	authapi "github.com/andrebq/boombox/cassette/programs/authprogram/api"
 	"github.com/andrebq/boombox/internal/httpserver"
 	tplua "github.com/andrebq/boombox/internal/lua/bindings/tapedeck"
 	"github.com/andrebq/boombox/tapedeck"
@@ -16,6 +20,8 @@ func Cmd() *cli.Command {
 	bindAddr := "localhost:7010"
 	var tapes cli.StringSlice
 	idxCassette := "index"
+	authCassette := ""
+	authKeyEnvVarName := authprogram.RootKeyEnvVar
 	return &cli.Command{
 		Name:  "private",
 		Usage: "Start a boombox writable instance (ie.: writeable api).",
@@ -39,6 +45,19 @@ func Cmd() *cli.Command {
 				Value:       idxCassette,
 				Destination: &idxCassette,
 			},
+			&cli.StringFlag{
+				Name:        "auth",
+				Usage:       "Name of the cassette that contains the auth program (leave empty to use the index one)",
+				Value:       authCassette,
+				Destination: &authCassette,
+			},
+			&cli.StringFlag{
+				Name:        "root-key-envvar-name",
+				Usage:       "Name of the environment variable that holds the root key. The key itself should not be passed as an argument",
+				Hidden:      true,
+				Value:       authKeyEnvVarName,
+				Destination: &authKeyEnvVarName,
+			},
 		},
 		Action: func(ctx *cli.Context) error {
 			deck := tapedeck.New()
@@ -56,6 +75,18 @@ func Cmd() *cli.Command {
 				deck.Load(tapeName[:len(tapeName)-len(filepath.Ext(tapeName))], c)
 			}
 			deck.IndexCassette(idxCassette)
+			if authCassette == "" {
+				authCassette = idxCassette
+			}
+			deck.AuthCassette(authCassette)
+
+			if deck.Index() == nil {
+				return errors.New("cannot run the private api without an index cassette")
+			}
+
+			if deck.Auth() == nil {
+				return errors.New("cannot run the private api without an auth cassette")
+			}
 
 			toHandler := capi.AsPrivilegedHandler
 
@@ -63,7 +94,12 @@ func Cmd() *cli.Command {
 			if err != nil {
 				return err
 			}
-			return httpserver.Serve(ctx.Context, bindAddr, handler)
+			keyfn, err := authprogram.KeyFNFromEnv(authKeyEnvVarName, os.Getenv, os.Setenv)
+			if err != nil {
+				return err
+			}
+			realm := authapi.NewRealm(deck.Auth(), authprogram.InMemoryTokenStore(), keyfn, false)
+			return httpserver.Serve(ctx.Context, bindAddr, realm.Protect(handler))
 		},
 	}
 }

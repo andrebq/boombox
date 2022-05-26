@@ -10,6 +10,7 @@ type (
 	D struct {
 		cassettes map[string]*cassette.Control
 		index     string
+		auth      string
 	}
 )
 
@@ -30,8 +31,16 @@ func (d *D) IndexCassette(name string) {
 	d.index = name
 }
 
+func (d *D) AuthCassette(name string) {
+	d.auth = name
+}
+
 func (d *D) Index() *cassette.Control {
 	return d.cassettes[d.index]
+}
+
+func (d *D) Auth() *cassette.Control {
+	return d.cassettes[d.auth]
 }
 
 func (d *D) List() []string {
