@@ -2,6 +2,7 @@ package boomproxy
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -28,19 +29,69 @@ func TestRouter(t *testing.T) {
 	ctx := context.Background()
 	queryCalls, _ := url.Parse(queryServer.URL)
 	apiCalls, _ := url.Parse(apiServer.URL)
-	handler := AsHandler(ctx, apiCalls, queryCalls, nil)
+	handler, _ := AsHandler(ctx, apiCalls, queryCalls, nil)
 
 	apitest.Handler(handler).Get("/hello/.query").Expect(t).Status(http.StatusOK).End()
 	apitest.Handler(handler).Get("/index.html").Expect(t).Status(http.StatusOK).End()
 	apitest.Handler(handler).Get("/hello/index.html").Expect(t).Status(http.StatusOK).End()
-
-	// handler is configured to not allow authenticated requests
-	apitest.Handler(handler).Get("/anything").BasicAuth("user", "pass").Expect(t).Status(http.StatusForbidden).End()
 
 	if queryCount != 1 {
 		t.Fatal("Invalid query count: ", queryCount)
 	}
 	if apiCount != 2 {
 		t.Fatal("Invalid api count: ", apiCount)
+	}
+}
+
+func TestAuthRouter(t *testing.T) {
+	var queryCount int
+	queryServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		queryCount++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer queryServer.Close()
+
+	var apiCount int
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		apiCount++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer apiServer.Close()
+
+	var authenticatedCount int
+	authenticatedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authenticatedCount++
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	ctx := context.Background()
+	queryCalls, _ := url.Parse(queryServer.URL)
+	apiCalls, _ := url.Parse(apiServer.URL)
+	authenticatedCalls, _ := url.Parse(authenticatedServer.URL + "/.admin/")
+	handler, _ := AsHandler(ctx, apiCalls, queryCalls, authenticatedCalls)
+
+	apitest.Handler(handler).Get("/hello/.query").Expect(t).Status(http.StatusOK).End()
+	apitest.Handler(handler).Get("/index.html").Expect(t).Status(http.StatusOK).End()
+	apitest.Handler(handler).Get("/hello/index.html").Expect(t).Status(http.StatusOK).End()
+	apitest.Handler(handler).Get("/.admin/index.html").Expect(t).Status(http.StatusOK).End()
+
+	if queryCount != 1 {
+		t.Fatal("Invalid query count: ", queryCount)
+	}
+	if apiCount != 2 {
+		t.Fatal("Invalid api count: ", apiCount)
+	}
+	if authenticatedCount != 1 {
+		t.Fatal("Invalid authenticated count: ", authenticatedCount)
+	}
+}
+
+func TestAuthWithoutPath(t *testing.T) {
+	publicURL, _ := url.Parse("http://example.com")
+	invalidAuthURL, _ := url.Parse("http://example.com/")
+
+	_, err := AsHandler(context.Background(), publicURL, publicURL, invalidAuthURL)
+	if !errors.Is(err, AuthURLWithoutPath{Endpoint: invalidAuthURL.String()}) {
+		t.Fatalf("Unexpected error for invalid auth url: %v", err)
 	}
 }

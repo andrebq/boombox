@@ -12,6 +12,7 @@ func Cmd() *cli.Command {
 	bindAddr := "localhost:7007"
 	apiEndpoint := "http://locahost:7008/"
 	queryEndpoint := "http://localhost:7009/"
+	adminEndpoint := "http://localhost:7010/admin"
 	return &cli.Command{
 		Name:  "router",
 		Usage: "Start the boombox router",
@@ -34,6 +35,12 @@ func Cmd() *cli.Command {
 				Destination: &queryEndpoint,
 				Value:       queryEndpoint,
 			},
+			&cli.StringFlag{
+				Name:        "admin-endpoint",
+				Usage:       "Base endpoint which hosts the admin interface (the only one with write permissions)",
+				Destination: &adminEndpoint,
+				Value:       adminEndpoint,
+			},
 		},
 		Action: func(ctx *cli.Context) error {
 			apiURL, err := url.Parse(apiEndpoint)
@@ -44,7 +51,14 @@ func Cmd() *cli.Command {
 			if err != nil {
 				return err
 			}
-			handler := boomproxy.AsHandler(ctx.Context, apiURL, queryURL, nil)
+			var adminURL *url.URL
+			if adminEndpoint != "" {
+				adminURL, err = url.Parse(adminEndpoint)
+				if err != nil {
+					return err
+				}
+			}
+			handler, err := boomproxy.AsHandler(ctx.Context, apiURL, queryURL, adminURL)
 			if err != nil {
 				return err
 			}
