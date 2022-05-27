@@ -1,7 +1,9 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
+	"path"
 	"regexp"
 
 	"github.com/andrebq/boombox/cassette"
@@ -16,11 +18,18 @@ type (
 		keyfn          authprogram.KeyFn
 		insecureCookie bool
 	}
+	AuthURLWithoutPath struct {
+		Prefix string
+	}
 )
 
 var (
 	bearerTokenRE = regexp.MustCompile(`^Bearer ([^\s]+)$`)
 )
+
+func (m AuthURLWithoutPath) Error() string {
+	return fmt.Sprintf("authenticated urls must have a non-empty path, got %v", m.Prefix)
+}
 
 func NewRealm(tape *cassette.Control, tokens authprogram.TokenStore, keyfn authprogram.KeyFn, allowHTTPCookie bool) *SecurityRealm {
 	return &SecurityRealm{
@@ -31,14 +40,20 @@ func NewRealm(tape *cassette.Control, tokens authprogram.TokenStore, keyfn authp
 	}
 }
 
-func (s *SecurityRealm) Protect(sensitive http.Handler) http.Handler {
+func (s *SecurityRealm) Protect(sensitive http.Handler, prefix string) (http.Handler, error) {
+	prefix = path.Clean(prefix)
+	if len(prefix) == 0 || prefix == "/" {
+		return nil, AuthURLWithoutPath{Prefix: prefix}
+	}
+	mux := http.NewServeMux()
+	mux.Handle(fmt.Sprintf("%v/", prefix), sensitive)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !s.checkToken(r) {
 			http.Error(w, "Invalid credentials", http.StatusUnauthorized)
 			return
 		}
-		sensitive.ServeHTTP(w, r)
-	})
+		mux.ServeHTTP(w, r)
+	}), nil
 }
 
 func (s *SecurityRealm) checkToken(r *http.Request) bool {
@@ -47,7 +62,6 @@ func (s *SecurityRealm) checkToken(r *http.Request) bool {
 	hdrVal := r.Header.Get("Authorization")
 	groups := bearerTokenRE.FindStringSubmatch(hdrVal)
 	if len(groups) == 0 {
-		println("token not found", hdrVal)
 		return false
 	}
 	tk := groups[1]

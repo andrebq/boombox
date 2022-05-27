@@ -24,14 +24,18 @@ func TestProtect(t *testing.T) {
 	}
 	sr := NewRealm(nil, ts, keyfn, true)
 	var count uint32
-	protected := sr.Protect(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	protected, err := sr.Protect(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddUint32(&count, 1)
 		http.Error(w, "OK", http.StatusOK)
-	}))
-	apitest.Handler(protected).Get("/").Expect(t).Status(http.StatusUnauthorized).End()
+	}), "/.auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	apitest.Handler(protected).Get("/.auth/").Expect(t).Status(http.StatusUnauthorized).End()
 	ts.Save(context.Background(), "abc123")
-	apitest.Handler(protected).Get("/").Header("Authorization", fmt.Sprintf("Bearer %v", "abc123")).Expect(t).Status(http.StatusOK).End()
+	apitest.Handler(protected).Get("/.auth/").Header("Authorization", fmt.Sprintf("Bearer %v", "abc123")).Expect(t).Status(http.StatusOK).End()
 	if count != 1 {
 		t.Fatal("Protected endpoing should have been called only once")
 	}
+	apitest.Handler(protected).Get("/").Header("Authorization", fmt.Sprintf("Bearer %v", "abc123")).Expect(t).Status(http.StatusNotFound).End()
 }

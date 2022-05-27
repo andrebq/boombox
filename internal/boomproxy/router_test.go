@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"testing"
 
+	authapi "github.com/andrebq/boombox/cassette/programs/authprogram/api"
 	"github.com/steinfletcher/apitest"
 )
 
@@ -91,7 +92,7 @@ func TestAuthWithoutPath(t *testing.T) {
 	invalidAuthURL, _ := url.Parse("http://example.com/")
 
 	_, err := AsHandler(context.Background(), publicURL, publicURL, invalidAuthURL)
-	if !errors.Is(err, AuthURLWithoutPath{Endpoint: invalidAuthURL.String()}) {
+	if !errors.Is(err, authapi.AuthURLWithoutPath{Prefix: invalidAuthURL.String()}) {
 		t.Fatalf("Unexpected error for invalid auth url: %v", err)
 	}
 }

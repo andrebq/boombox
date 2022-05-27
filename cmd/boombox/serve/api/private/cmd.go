@@ -22,6 +22,7 @@ func Cmd() *cli.Command {
 	idxCassette := "index"
 	authCassette := ""
 	authKeyEnvVarName := authprogram.RootKeyEnvVar
+	apiPrefix := "/.api/"
 	return &cli.Command{
 		Name:  "private",
 		Usage: "Start a boombox writable instance (ie.: writeable api).",
@@ -54,9 +55,14 @@ func Cmd() *cli.Command {
 			&cli.StringFlag{
 				Name:        "root-key-envvar-name",
 				Usage:       "Name of the environment variable that holds the root key. The key itself should not be passed as an argument",
-				Hidden:      true,
 				Value:       authKeyEnvVarName,
 				Destination: &authKeyEnvVarName,
+			},
+			&cli.StringFlag{
+				Name:        "api-prefix",
+				Usage:       "Prefix where the api will live",
+				Value:       apiPrefix,
+				Destination: &apiPrefix,
 			},
 		},
 		Action: func(ctx *cli.Context) error {
@@ -99,7 +105,11 @@ func Cmd() *cli.Command {
 				return err
 			}
 			realm := authapi.NewRealm(deck.Auth(), authprogram.InMemoryTokenStore(), keyfn, false)
-			return httpserver.Serve(ctx.Context, bindAddr, realm.Protect(handler))
+			protectedHandler, err := realm.Protect(handler, apiPrefix)
+			if err != nil {
+				return err
+			}
+			return httpserver.Serve(ctx.Context, bindAddr, protectedHandler)
 		},
 	}
 }

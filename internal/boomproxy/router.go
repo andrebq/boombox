@@ -8,18 +8,9 @@ import (
 	"net/url"
 	"path"
 
+	authapi "github.com/andrebq/boombox/cassette/programs/authprogram/api"
 	"github.com/julienschmidt/httprouter"
 )
-
-type (
-	AuthURLWithoutPath struct {
-		Endpoint string
-	}
-)
-
-func (m AuthURLWithoutPath) Error() string {
-	return fmt.Sprintf("authenticated urls must have a non-empty path, got %v", m.Endpoint)
-}
 
 var (
 	methods = []string{
@@ -37,7 +28,7 @@ func AsHandler(ctx context.Context, apiCalls *url.URL, queryCalls *url.URL, auth
 	if authenticatedCalls != nil {
 		authPrefix = authenticatedCalls.Path
 		if authPrefix == "/" || len(authPrefix) == 0 {
-			return nil, AuthURLWithoutPath{Endpoint: authenticatedCalls.String()}
+			return nil, authapi.AuthURLWithoutPath{Prefix: authenticatedCalls.String()}
 		}
 		authProxy = httputil.NewSingleHostReverseProxy(authenticatedCalls)
 	}
@@ -46,7 +37,6 @@ func AsHandler(ctx context.Context, apiCalls *url.URL, queryCalls *url.URL, auth
 
 	if authProxy != nil {
 		authPrefix = fmt.Sprintf("%v/*tail", path.Clean(authPrefix))
-		println("authprefix: ", authPrefix)
 		for _, v := range methods {
 			apiRouter.Handler(v, authPrefix, authProxy)
 		}
