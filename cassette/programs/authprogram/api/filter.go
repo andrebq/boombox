@@ -1,10 +1,13 @@
 package api
 
 import (
+	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"path"
 	"regexp"
+	"strconv"
 
 	"github.com/andrebq/boombox/cassette"
 	"github.com/andrebq/boombox/cassette/programs/authprogram"
@@ -46,14 +49,42 @@ func (s *SecurityRealm) Protect(sensitive http.Handler, prefix string) (http.Han
 		return nil, AuthURLWithoutPath{Prefix: prefix}
 	}
 	mux := http.NewServeMux()
-	mux.Handle(fmt.Sprintf("%v/", prefix), sensitive)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle(fmt.Sprintf("%v/.login", prefix), http.HandlerFunc(s.performLogin))
+	mux.Handle(fmt.Sprintf("%v/", prefix), http.StripPrefix(prefix, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !s.checkToken(r) {
 			http.Error(w, "Invalid credentials", http.StatusUnauthorized)
 			return
 		}
-		mux.ServeHTTP(w, r)
-	}), nil
+		sensitive.ServeHTTP(w, r)
+	})))
+
+	return mux, nil
+}
+
+func (s *SecurityRealm) performLogin(w http.ResponseWriter, req *http.Request) {
+	if req.Method != "POST" {
+		http.Error(w, "Please use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	user, passwd, ok := req.BasicAuth()
+	if !ok {
+		http.Error(w, "Missing username/password credentials", http.StatusUnauthorized)
+		return
+	}
+	token, err := authprogram.Login(req.Context(), s.tokenset, s.tape, authprogram.PlainText(user),
+		authprogram.PlainText(passwd), s.keyfn, rand.Reader)
+	if err != nil {
+		log := logutil.GetOrDefault(req.Context())
+		log.Error().Err(err).Msg("Unable to authenticate user")
+	}
+	buf, _ := json.Marshal(struct {
+		Token string `json:"token"`
+	}{Token: token})
+
+	w.Header().Add("Content-Type", "application/json")
+	w.Header().Add("Content-Length", strconv.Itoa(len(buf)))
+	w.WriteHeader(http.StatusOK)
+	w.Write(buf)
 }
 
 func (s *SecurityRealm) checkToken(r *http.Request) bool {
