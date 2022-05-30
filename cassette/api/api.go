@@ -77,6 +77,8 @@ func asHandler(ctx context.Context, c *cassette.Control, tapemodule lua.LGFuncti
 	sort.Sort(sort.Reverse(sort.StringSlice(assets)))
 
 	router := httprouter.New()
+	router.RedirectTrailingSlash = false
+	router.RedirectFixedPath = false
 	for _, s := range assets {
 		router.HandlerFunc("GET", fmt.Sprintf("/%v", s), serveAsset(c, s))
 		if path.Base(s) == "index.html" {
@@ -92,7 +94,10 @@ func asHandler(ctx context.Context, c *cassette.Control, tapemodule lua.LGFuncti
 			case !strings.HasSuffix(dir, "/"):
 				dir = fmt.Sprintf("%v/", dir)
 			}
-			router.HandlerFunc("GET", dir, serveAsset(c, s))
+			router.HandlerFunc("GET", dir, func(w http.ResponseWriter, r *http.Request) {
+				println("send redirect")
+				http.Redirect(w, r, "./index.html", http.StatusSeeOther)
+			})
 		}
 	}
 

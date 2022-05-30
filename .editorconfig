@@ -1,0 +1,45 @@
+
+
+root = true
+[*]
+end_of_line = lf
+charset = utf-8
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+[{Makefile, *.mk}]
+indent_size = 8
+indent_style = tab
+
+[{*.py}]
+indent_size = 4
+indent_style = space
+
+[{*.js,*.html,*.css}]
+indent_size = 4
+indent_style = space
+
+[{*.go,go.mod}]
+indent_size = 8
+indent_style = tab
+
+[{*.yaml,*.yml}]
+indent_style = space
+indent_size = 2
+
+[{*.groovy, *.Jenkinsfile, Jenkinsfile}]
+indent_style = space
+indent_size = 4
+
+[*.sh]
+indent_size = 4
+indent_style = space
+
+[*.md]
+indent_size = 4
+trim_trailing_whitespace = false
+
+[Dockerfile]
+indent_size = 4

@@ -52,8 +52,8 @@ func TestTapedeck(t *testing.T) {
 	apitest.Handler(handler).
 		Get("/index/").
 		Expect(t).
-		Status(http.StatusOK).
-		Body(`<h1>it works</h1>`).
+		Status(http.StatusSeeOther).
+		Body("<a href=\"/index.html\">See Other</a>.\n\n").
 		End()
 	apitest.Handler(handler).
 		Get("/about/api/index").

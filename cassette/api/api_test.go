@@ -166,8 +166,8 @@ func TestApi(t *testing.T) {
 		Handler(handler).
 		Get("/").  // request
 		Expect(t). // expectations
-		Body(`<h1>it works</h1>`).
-		Status(http.StatusOK).
+		Body("<a href=\"/index.html\">See Other</a>.\n\n").
+		Status(http.StatusSeeOther).
 		End()
 	apitest.New().
 		Handler(handler).
@@ -180,8 +180,8 @@ func TestApi(t *testing.T) {
 		Handler(handler).
 		Get("/nested/folder/"). // request
 		Expect(t).              // expectations
-		Body(`<h1>it works</h1>`).
-		Status(http.StatusOK).
+		Body("<a href=\"/nested/folder/index.html\">See Other</a>.\n\n").
+		Status(http.StatusSeeOther).
 		End()
 
 	apitest.New().

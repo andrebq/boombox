@@ -58,8 +58,7 @@ func (d *D) Get(name string) *cassette.Control {
 
 func (d *D) Close() error {
 	// TODO: add some form of error list here
-	for n, c := range d.cassettes {
-		println("closing cassette", n)
+	for _, c := range d.cassettes {
 		c.Close()
 	}
 	return nil

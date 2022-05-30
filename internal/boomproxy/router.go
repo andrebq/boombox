@@ -20,6 +20,8 @@ var (
 
 func AsHandler(ctx context.Context, apiCalls *url.URL, queryCalls *url.URL, authenticatedCalls *url.URL) (http.Handler, error) {
 	router := httprouter.New()
+	router.RedirectFixedPath = false
+	router.RedirectTrailingSlash = false
 
 	apiProxy := httputil.NewSingleHostReverseProxy(apiCalls)
 	queryProxy := httputil.NewSingleHostReverseProxy(queryCalls)

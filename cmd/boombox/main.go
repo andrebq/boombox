@@ -6,6 +6,7 @@ import (
 	"os/signal"
 
 	"github.com/andrebq/boombox/cmd/boombox/cassette"
+	"github.com/andrebq/boombox/cmd/boombox/programs"
 	"github.com/andrebq/boombox/cmd/boombox/serve"
 	"github.com/rs/zerolog/log"
 	"github.com/urfave/cli/v2"
@@ -18,6 +19,7 @@ func main() {
 		Commands: []*cli.Command{
 			cassette.Cmd(),
 			serve.Cmd(),
+			programs.Cmd(),
 		},
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)

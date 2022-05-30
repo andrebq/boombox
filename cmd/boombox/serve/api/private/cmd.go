@@ -9,6 +9,7 @@ import (
 	capi "github.com/andrebq/boombox/cassette/api"
 	"github.com/andrebq/boombox/cassette/programs/authprogram"
 	authapi "github.com/andrebq/boombox/cassette/programs/authprogram/api"
+	"github.com/andrebq/boombox/internal/cmdflags"
 	"github.com/andrebq/boombox/internal/httpserver"
 	tplua "github.com/andrebq/boombox/internal/lua/bindings/tapedeck"
 	"github.com/andrebq/boombox/tapedeck"
@@ -52,12 +53,7 @@ func Cmd() *cli.Command {
 				Value:       authCassette,
 				Destination: &authCassette,
 			},
-			&cli.StringFlag{
-				Name:        "root-key-envvar-name",
-				Usage:       "Name of the environment variable that holds the root key. The key itself should not be passed as an argument",
-				Value:       authKeyEnvVarName,
-				Destination: &authKeyEnvVarName,
-			},
+			cmdflags.RootKeyEnvVar(&authKeyEnvVarName),
 			&cli.StringFlag{
 				Name:        "api-prefix",
 				Usage:       "Prefix where the api will live",
