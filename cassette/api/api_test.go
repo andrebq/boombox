@@ -54,10 +54,6 @@ func TestUploadAsset(t *testing.T) {
 	apitest.Handler(handler).Put("/.internals/write-asset/index.html").Body("<h1>it also works</h1>").Expect(t).Status(http.StatusOK).End()
 	apitest.Handler(handler).Get("/index.html").Expect(t).Body("<h1>it also works</h1>").Status(http.StatusOK).End()
 	apitest.Handler(handler).Put("/.internals/write-asset/index2.html").Body("<h1>it also works</h1>").Expect(t).Status(http.StatusOK).End()
-	// TODO: this is a limitation that will be removed in the future
-	// but at the moment, the asset path is not automatically updated
-	apitest.Handler(handler).Get("/index2.html").Expect(t).Status(http.StatusNotFound).End()
-	handler, _ = AsPrivilegedHandler(ctx, tape, nil)
 	apitest.Handler(handler).Get("/index2.html").Expect(t).Status(http.StatusOK).Body("<h1>it also works</h1>").End()
 }
 
@@ -82,7 +78,7 @@ func TestFormParsing(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		err = c.MapRoute(ctx, []string{"POST"}, "/:route/hello-from-lua", "codebase/index.lua")
+		err = c.MapRoute(ctx, []string{"POST"}, "/api/:route/hello-from-lua", "codebase/index.lua")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -124,7 +120,7 @@ func TestRequestParsing(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		err = c.MapRoute(ctx, []string{"POST"}, "/:route/hello-from-lua", "codebase/index.lua")
+		err = c.MapRoute(ctx, []string{"POST"}, "/api/:route/hello-from-lua", "codebase/index.lua")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -170,7 +166,7 @@ func TestApi(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		err = c.MapRoute(ctx, []string{"GET"}, "/hello-from-lua", "codebase/index.lua")
+		err = c.MapRoute(ctx, []string{"GET"}, "/api/hello-from-lua", "codebase/index.lua")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -193,8 +189,8 @@ func TestApi(t *testing.T) {
 		Handler(handler).
 		Get("/").  // request
 		Expect(t). // expectations
-		Body("<a href=\"/index.html\">See Other</a>.\n\n").
-		Status(http.StatusSeeOther).
+		Body("<h1>it works</h1>").
+		Status(http.StatusOK).
 		End()
 	apitest.New().
 		Handler(handler).
@@ -207,8 +203,8 @@ func TestApi(t *testing.T) {
 		Handler(handler).
 		Get("/nested/folder/"). // request
 		Expect(t).              // expectations
-		Body("<a href=\"/nested/folder/index.html\">See Other</a>.\n\n").
-		Status(http.StatusSeeOther).
+		Body("<h1>it works</h1>").
+		Status(http.StatusOK).
 		End()
 
 	apitest.New().

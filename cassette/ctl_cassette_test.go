@@ -150,6 +150,12 @@ func TestCodebaseCassette(t *testing.T) {
 	} else if !reflect.DeepEqual(routes, []Code{{Route: "/index", Code: indexLuaCode, Methods: []string{"GET", "POST"}}}) {
 		t.Fatalf("Unexpected routes found: %#v", routes)
 	}
+	indexRoute, err := c.LookupRoute(ctx, "/index")
+	if err != nil {
+		t.Fatal(err)
+	} else if !reflect.DeepEqual(indexRoute, routes[0]) {
+		t.Fatalf("Unexpected single route lookup, got %#v expecting %#v", indexRoute, routes[0])
+	}
 	err = c.ToggleCodebase(ctx, "codebase/index.lua", false)
 	if err != nil {
 		t.Fatal(err)

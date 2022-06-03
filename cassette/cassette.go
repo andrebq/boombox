@@ -130,6 +130,24 @@ func (c *Control) ListRoutes(ctx context.Context) ([]Code, error) {
 	}
 	return out, nil
 }
+func (c *Control) LookupRoute(ctx context.Context, route string) (Code, error) {
+	// TODO: remove this code duplication
+	var code Code
+	var methodStr string
+	err := c.db.QueryRowContext(ctx, `select r.route, a.content, r.methods
+	from routes r
+	inner join codebase c on r.asset_id = c.asset_id
+	inner join assets a on c.asset_id = a.asset_id
+	where r.route = ?`, route).Scan(&code.Route, &code.Code, &methodStr)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Code{}, RouteNotFound{Route: route}
+	} else if err != nil {
+		return Code{}, fmt.Errorf("unable to get routes from cassette, cause %w", err)
+	}
+	methodStr = strings.ToUpper(methodStr)
+	code.Methods = strings.Split(methodStr, "|")
+	return code, nil
+}
 
 func (c *Control) MapRoute(ctx context.Context, methods []string, route string, asset string) error {
 	// TODO: perform proper method validation here

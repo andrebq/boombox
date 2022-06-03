@@ -3,12 +3,12 @@ package api
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"html/template"
 	"io/ioutil"
 	"net/http"
 	"path"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +16,7 @@ import (
 
 	"github.com/andrebq/boombox/cassette"
 	"github.com/andrebq/boombox/cassette/importer"
+	"github.com/andrebq/boombox/internal/logutil"
 	"github.com/andrebq/boombox/internal/lua/bindings/httplua"
 	"github.com/andrebq/boombox/internal/lua/ltoj"
 	"github.com/andrebq/boombox/internal/lua/luadefaults"
@@ -69,60 +70,57 @@ func AsHandler(ctx context.Context, c *cassette.Control, tapedeckModule lua.LGFu
 }
 
 func asHandler(ctx context.Context, c *cassette.Control, tapemodule lua.LGFunction) (http.Handler, error) {
-	assets, err := c.ListAssets(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	// using reverse sort makes longer paths to appear before smaller ones
-	// which makes handling `index.html` default much simpler
-	sort.Sort(sort.Reverse(sort.StringSlice(assets)))
+	// Logic
+	// 1- Register /.internals/ paths as those have priority
+	// 2- If not found, lookup the API
+	// 3- If not found, lookup assets
 
 	router := httprouter.New()
 	router.RedirectTrailingSlash = false
 	router.RedirectFixedPath = false
-	for _, s := range assets {
-		router.HandlerFunc("GET", fmt.Sprintf("/%v", s), serveAsset(c, s))
-		if path.Base(s) == "index.html" {
-			dir := path.Dir(s)
-			if dir == "." {
-				dir = "/"
-			}
-			switch {
-			case !strings.HasPrefix(dir, "/") && !strings.HasSuffix(dir, "/"):
-				dir = fmt.Sprintf("/%v/", dir)
-			case !strings.HasPrefix(dir, "/"):
-				dir = fmt.Sprintf("/%v", dir)
-			case !strings.HasSuffix(dir, "/"):
-				dir = fmt.Sprintf("%v/", dir)
-			}
-			router.HandlerFunc("GET", dir, func(w http.ResponseWriter, r *http.Request) {
-				println("send redirect")
-				http.Redirect(w, r, "./index.html", http.StatusSeeOther)
-			})
-		}
-	}
 
 	router.HandlerFunc("GET", "/.internals/asset-list", listAssets(c))
-
 	if c.HasPrivileges() {
 		router.HandlerFunc("PUT", "/.internals/write-asset/*assetPath", writeAsset(c))
 		// router.HandlerFunc("PUT", "/.internals/enable-code/*assetPath", enableCodebase(c))
 		// router.HandlerFunc("POST", "/.internals/add-route", addRoute(c))
 	}
-
-	routes, err := c.ListRoutes(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for _, r := range routes {
-		apiRoute := path.Join("/api", r.Route)
-		for _, m := range r.Methods {
-			router.HandlerFunc(m, apiRoute, serveDynamicCode(r.Code, tapemodule))
-		}
-	}
-
+	router.NotFound = apiOrAssetHandler(ctx, c, tapemodule)
 	return router, nil
+}
+
+func apiOrAssetHandler(rootCtx context.Context, c *cassette.Control, tape lua.LGFunction) http.Handler {
+	rootlog := logutil.GetOrDefault(rootCtx)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Path
+		api, err := c.LookupRoute(r.Context(), p)
+		if err == nil {
+			// TODO: remove this useless closure
+			// I am too lazy to do it now!
+			serveDynamicCode(api.Code, tape).ServeHTTP(w, r)
+			return
+		}
+		var routeNotFound cassette.RouteNotFound
+		if errors.As(err, &routeNotFound) {
+			// ignore not found routes
+			err = nil
+		}
+		// Database error!
+		if err != nil {
+			rootlog.Error().Err(err).Str("path", p).Msg("Error while trying to lookup api path")
+			http.Error(w, "Internal error", http.StatusInternalServerError)
+			return
+		}
+		if strings.HasSuffix(p, "/") {
+			// Cassettes do not support directory assets
+			// if the prefix ends with a `/`, then serve
+			// index.html instead
+			p = fmt.Sprintf("%v/index.html", p)
+		}
+		// All assets in a Cassette are relative
+		p = strings.TrimLeft(p, "/")
+		serveAsset(c, p).ServeHTTP(w, r)
+	})
 }
 
 func writeAsset(c *cassette.Control) http.HandlerFunc {
@@ -202,8 +200,13 @@ func serveAsset(c *cassette.Control, assetPath string) http.HandlerFunc {
 		// it is fine if the client needs to wait a couple of extra millis if that means
 		// less lock contention at the database layer
 		_, mt, err := c.CopyAsset(r.Context(), &buf, assetPath)
+		var notFound cassette.AssetNotFound
+		if errors.As(err, &notFound) {
+			http.Error(w, fmt.Sprintf("not found: %v", assetPath), http.StatusNotFound)
+			return
+		}
 		if err != nil {
-			http.Error(w, "unable to fetch desired asset, server is mis-behaving", http.StatusBadGateway)
+			http.Error(w, "unable to fetch desired asset, server is mis-behaving", http.StatusInternalServerError)
 		}
 		if mt == "text/x-lua" {
 			mt = "text/plain"

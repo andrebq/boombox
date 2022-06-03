@@ -45,7 +45,15 @@ type (
 	}
 
 	MissingExtendedPrivileges struct{}
+
+	RouteNotFound struct {
+		Route string
+	}
 )
+
+func (r RouteNotFound) Error() string {
+	return fmt.Sprintf("cassette: route [%v] not found", r.Route)
+}
 
 func (i InvalidTextContent) Error() string {
 	return fmt.Sprintf("assets with mimetype %v must be utf-8 encoded", i.MimeType)

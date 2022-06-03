@@ -35,7 +35,7 @@ func TestTapedeck(t *testing.T) {
 		if err := about.ToggleCodebase(ctx, "codebase/index.lua", true); err != nil {
 			t.Fatal(err)
 		}
-		if err := about.MapRoute(ctx, []string{"GET"}, "/index", "codebase/index.lua"); err != nil {
+		if err := about.MapRoute(ctx, []string{"GET"}, "/api/index", "codebase/index.lua"); err != nil {
 			t.Fatal(err)
 		}
 		return nil
@@ -52,8 +52,8 @@ func TestTapedeck(t *testing.T) {
 	apitest.Handler(handler).
 		Get("/index/").
 		Expect(t).
-		Status(http.StatusSeeOther).
-		Body("<a href=\"/index.html\">See Other</a>.\n\n").
+		Status(http.StatusOK).
+		Body("<h1>it works</h1>").
 		End()
 	apitest.Handler(handler).
 		Get("/about/api/index").
@@ -82,7 +82,7 @@ func TestDynamicPageCasseteQuery(t *testing.T) {
 		if err := c.ToggleCodebase(ctx, "codebase/peeps.lua", true); err != nil {
 			return err
 		}
-		if err := c.MapRoute(ctx, []string{"GET"}, "/list", "codebase/peeps.lua"); err != nil {
+		if err := c.MapRoute(ctx, []string{"GET"}, "/api/list", "codebase/peeps.lua"); err != nil {
 			t.Fatal(err)
 		}
 		return nil
