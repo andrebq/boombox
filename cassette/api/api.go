@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"html/template"
+	"io/ioutil"
 	"net/http"
 	"path"
 	"sort"
@@ -14,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/andrebq/boombox/cassette"
+	"github.com/andrebq/boombox/cassette/importer"
 	"github.com/andrebq/boombox/internal/lua/bindings/httplua"
 	"github.com/andrebq/boombox/internal/lua/ltoj"
 	"github.com/andrebq/boombox/internal/lua/luadefaults"
@@ -103,6 +105,12 @@ func asHandler(ctx context.Context, c *cassette.Control, tapemodule lua.LGFuncti
 
 	router.HandlerFunc("GET", "/.internals/asset-list", listAssets(c))
 
+	if c.HasPrivileges() {
+		router.HandlerFunc("PUT", "/.internals/write-asset/*assetPath", writeAsset(c))
+		// router.HandlerFunc("PUT", "/.internals/enable-code/*assetPath", enableCodebase(c))
+		// router.HandlerFunc("POST", "/.internals/add-route", addRoute(c))
+	}
+
 	routes, err := c.ListRoutes(ctx)
 	if err != nil {
 		return nil, err
@@ -115,6 +123,41 @@ func asHandler(ctx context.Context, c *cassette.Control, tapemodule lua.LGFuncti
 	}
 
 	return router, nil
+}
+
+func writeAsset(c *cassette.Control) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		assetPath := httprouter.ParamsFromContext(ctx).ByName("assetPath")
+		assetPath = path.Clean(assetPath)
+		switch {
+		case len(assetPath) == 0:
+			http.Error(w, "Missing assetPath information", http.StatusBadRequest)
+			return
+		case assetPath[len(assetPath)-1] == '/':
+			http.Error(w, "Cannot write a directory, upload files individually", http.StatusBadRequest)
+			return
+		}
+		ext := path.Ext(assetPath)
+		if len(ext) == 0 {
+			http.Error(w, "Extension is required for assets", http.StatusBadRequest)
+			return
+		}
+		mt := importer.MimetypeFromExtension(ext)
+		content, err := ioutil.ReadAll(r.Body)
+		r.Body.Close()
+		if err != nil {
+			http.Error(w, "Unable to read the whole request body", http.StatusBadRequest)
+			return
+		}
+		assetPath = strings.TrimLeft(assetPath, "/")
+		_, err = c.StoreAsset(ctx, assetPath, mt, string(content))
+		if err != nil {
+			http.Error(w, "Unable to store asset in database", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}
 }
 
 func listAssets(c *cassette.Control) http.HandlerFunc {

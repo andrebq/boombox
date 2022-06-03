@@ -34,6 +34,33 @@ func TestPrivilegedApp(t *testing.T) {
 	apitest.Handler(handler).Get("/index.html").Expect(t).Body("<h1>it works</h1>").Status(http.StatusOK).End()
 }
 
+func TestUploadAsset(t *testing.T) {
+	ctx := context.Background()
+	tape, cleanup := testutil.AcquireWritableCassette(ctx, t, "test")
+	defer cleanup()
+	_, err := tape.StoreAsset(ctx, "index.html", "text/html", "<h1>it works</h1>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = tape.EnablePrivileges()
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := AsPrivilegedHandler(ctx, tape, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	apitest.Handler(handler).Get("/index.html").Expect(t).Body("<h1>it works</h1>").Status(http.StatusOK).End()
+	apitest.Handler(handler).Put("/.internals/write-asset/index.html").Body("<h1>it also works</h1>").Expect(t).Status(http.StatusOK).End()
+	apitest.Handler(handler).Get("/index.html").Expect(t).Body("<h1>it also works</h1>").Status(http.StatusOK).End()
+	apitest.Handler(handler).Put("/.internals/write-asset/index2.html").Body("<h1>it also works</h1>").Expect(t).Status(http.StatusOK).End()
+	// TODO: this is a limitation that will be removed in the future
+	// but at the moment, the asset path is not automatically updated
+	apitest.Handler(handler).Get("/index2.html").Expect(t).Status(http.StatusNotFound).End()
+	handler, _ = AsPrivilegedHandler(ctx, tape, nil)
+	apitest.Handler(handler).Get("/index2.html").Expect(t).Status(http.StatusOK).Body("<h1>it also works</h1>").End()
+}
+
 func TestFormParsing(t *testing.T) {
 	ctx := context.Background()
 	var err error
