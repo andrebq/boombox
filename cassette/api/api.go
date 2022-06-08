@@ -16,7 +16,6 @@ import (
 
 	"github.com/andrebq/boombox/cassette"
 	"github.com/andrebq/boombox/cassette/importer"
-	"github.com/andrebq/boombox/internal/logutil"
 	"github.com/andrebq/boombox/internal/lua/bindings/httplua"
 	"github.com/andrebq/boombox/internal/lua/ltoj"
 	"github.com/andrebq/boombox/internal/lua/luadefaults"
@@ -90,27 +89,8 @@ func asHandler(ctx context.Context, c *cassette.Control, tapemodule lua.LGFuncti
 }
 
 func apiOrAssetHandler(rootCtx context.Context, c *cassette.Control, tape lua.LGFunction) http.Handler {
-	rootlog := logutil.GetOrDefault(rootCtx)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	serveStaticAsset := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
-		api, err := c.LookupRoute(r.Context(), p)
-		if err == nil {
-			// TODO: remove this useless closure
-			// I am too lazy to do it now!
-			serveDynamicCode(api.Code, tape).ServeHTTP(w, r)
-			return
-		}
-		var routeNotFound cassette.RouteNotFound
-		if errors.As(err, &routeNotFound) {
-			// ignore not found routes
-			err = nil
-		}
-		// Database error!
-		if err != nil {
-			rootlog.Error().Err(err).Str("path", p).Msg("Error while trying to lookup api path")
-			http.Error(w, "Internal error", http.StatusInternalServerError)
-			return
-		}
 		if strings.HasSuffix(p, "/") {
 			// Cassettes do not support directory assets
 			// if the prefix ends with a `/`, then serve
@@ -120,6 +100,19 @@ func apiOrAssetHandler(rootCtx context.Context, c *cassette.Control, tape lua.LG
 		// All assets in a Cassette are relative
 		p = strings.TrimLeft(p, "/")
 		serveAsset(c, p).ServeHTTP(w, r)
+	})
+	newRouter := make(chan *httprouter.Router, 0)
+	go monitorDynamicRoutes(rootCtx, c, tape, newRouter, serveStaticAsset)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case router, open := <-newRouter:
+			if !open {
+				http.Error(w, "Server went is in a invalid state, please try again later", http.StatusInternalServerError)
+				return
+			}
+			router.ServeHTTP(w, r)
+		case <-r.Context().Done():
+		}
 	})
 }
 
@@ -227,5 +220,56 @@ func serveAsset(c *cassette.Control, assetPath string) http.HandlerFunc {
 		// the data is already here and the database lock was released a long time ago
 		w.WriteHeader(http.StatusOK)
 		w.Write(buf.Bytes())
+	}
+}
+
+func monitorDynamicRoutes(ctx context.Context, c *cassette.Control, tapedeck lua.LGFunction, output chan<- *httprouter.Router, notfound http.Handler) {
+	ctx, cancel := context.WithCancel(ctx)
+	loadRouter := func(ctx context.Context, c *cassette.Control, deck lua.LGFunction) (*httprouter.Router, error) {
+		routes, err := c.ListRoutes(ctx)
+		if err != nil {
+			return nil, err
+		}
+		router := httprouter.New()
+		router.NotFound = notfound
+		for _, r := range routes {
+			for _, method := range r.Methods {
+				router.HandlerFunc(method, r.Route, serveDynamicCode(r.Code, tapedeck))
+			}
+		}
+		return router, nil
+	}
+	defer close(output)
+	t := time.NewTicker(time.Second)
+	defer t.Stop()
+	currentRouter, err := loadRouter(ctx, c, tapedeck)
+	if err != nil {
+		close(output)
+	}
+	newRouter := make(chan *httprouter.Router, 1)
+	for {
+		select {
+		case <-ctx.Done():
+		case <-t.C:
+			// TODO: make this less stupid!!!!
+			// This will reload all routes every 1 second... even if there were no changes
+			// find a way to detect a change and only update routes if a change is dected,
+			// but as everything else in this project, I'm to lazy to do it properly now
+			go func(ctx context.Context) {
+				r, err := loadRouter(ctx, c, tapedeck)
+				if err != nil {
+					cancel()
+				}
+				select {
+				case newRouter <- r:
+				case <-ctx.Done():
+				default:
+					// TODO: since we are blindingly writing to the channel, at least avoid go-routine explosion
+				}
+			}(ctx)
+		case output <- currentRouter:
+			// send the current output, in case anyone is waiting for it
+		case currentRouter = <-newRouter:
+		}
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/andrebq/boombox/cassette"
 	"github.com/andrebq/boombox/internal/testutil"
@@ -32,6 +33,50 @@ func TestPrivilegedApp(t *testing.T) {
 		t.Fatal(err)
 	}
 	apitest.Handler(handler).Get("/index.html").Expect(t).Body("<h1>it works</h1>").Status(http.StatusOK).End()
+}
+
+func TestDynamicRouteUpdate(t *testing.T) {
+	ctx := context.Background()
+	tape, cleanup := testutil.AcquireWritableCassette(ctx, t, "test")
+	_, err := tape.StoreAsset(ctx, "codebase/index.lua", "text/x-lua", `
+	local ctx = require('ctx')
+	local res = ctx.res
+	res:write_body('hello from lua')
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = tape.ToggleCodebase(ctx, "codebase/index.lua", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = tape.MapRoute(ctx, []string{"GET"}, "/api/index", "codebase/index.lua")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	err = tape.EnablePrivileges()
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := AsPrivilegedHandler(ctx, tape, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	apitest.Handler(handler).Get("/api/index").Expect(t).Body("hello from lua").Status(http.StatusOK).End()
+	_, err = tape.StoreAsset(ctx, "codebase/index.lua", "text/x-lua", `
+	local ctx = require('ctx')
+	local res = ctx.res
+	res:write_body('hello from updated lua')
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// TODO: very clumsy, but here we wait for the update
+	// Since the server is recompiling the router every second, by waiting for 2 seconds
+	// we defintely should pick up the new values
+	time.Sleep(time.Second * 2)
+	apitest.Handler(handler).Get("/api/index").Expect(t).Body("hello from updated lua").Status(http.StatusOK).End()
 }
 
 func TestUploadAsset(t *testing.T) {
