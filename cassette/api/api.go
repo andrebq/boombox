@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
@@ -16,10 +17,12 @@ import (
 
 	"github.com/andrebq/boombox/cassette"
 	"github.com/andrebq/boombox/cassette/importer"
+	"github.com/andrebq/boombox/internal/logutil"
 	"github.com/andrebq/boombox/internal/lua/bindings/httplua"
 	"github.com/andrebq/boombox/internal/lua/ltoj"
 	"github.com/andrebq/boombox/internal/lua/luadefaults"
 	"github.com/julienschmidt/httprouter"
+	"github.com/rs/zerolog"
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -81,11 +84,76 @@ func asHandler(ctx context.Context, c *cassette.Control, tapemodule lua.LGFuncti
 	router.HandlerFunc("GET", "/.internals/asset-list", listAssets(c))
 	if c.HasPrivileges() {
 		router.HandlerFunc("PUT", "/.internals/write-asset/*assetPath", writeAsset(c))
-		// router.HandlerFunc("PUT", "/.internals/enable-code/*assetPath", enableCodebase(c))
-		// router.HandlerFunc("POST", "/.internals/add-route", addRoute(c))
+		router.HandlerFunc("PUT", "/.internals/enable-code/*assetPath", enableCodebase(ctx, c))
+		router.HandlerFunc("POST", "/.internals/set-route/*route", setRoute(ctx, c))
 	}
 	router.NotFound = apiOrAssetHandler(ctx, c, tapemodule)
 	return router, nil
+}
+
+func setRoute(ctx context.Context, c *cassette.Control) http.HandlerFunc {
+	log := logutil.GetOrDefault(ctx).With().Str("action", "set-route").Logger().Sample(zerolog.Sometimes)
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		var payload struct {
+			Asset   string   `json:"asset"`
+			Methods []string `json:"methods"`
+		}
+		err := json.NewDecoder(r.Body).Decode(&payload)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if len(payload.Asset) == 0 {
+			http.Error(w, "Missing asset path", http.StatusBadRequest)
+			return
+		}
+		route := httprouter.ParamsFromContext(ctx).ByName("route")
+		payload.Asset = strings.TrimLeft(path.Clean(payload.Asset), "/")
+		err = c.MapRoute(r.Context(), payload.Methods, route, payload.Asset)
+		if err != nil {
+			log.Error().Err(err).Str("assetPath", payload.Asset).Strs("methods", payload.Methods).Str("route", route).Msg("Unable to set route")
+			http.Error(w, "Unexpected internal error, please check logs for more information", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}
+}
+
+func enableCodebase(ctx context.Context, c *cassette.Control) http.HandlerFunc {
+	log := logutil.GetOrDefault(ctx).With().Str("action", "enableCodebase").Logger().Sample(zerolog.Sometimes)
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		ap := httprouter.ParamsFromContext(ctx).ByName("assetPath")
+		if len(ap) == 0 {
+			http.Error(w, "Missing asset path", http.StatusBadRequest)
+			return
+		}
+		ap = strings.TrimLeft(ap, "/")
+		err := r.ParseForm()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		var enable bool
+		switch val := r.FormValue("enabled"); val {
+		case "y", "yes", "1", "true", "t":
+			enable = true
+		case "n", "no", "0", "false", "f":
+			enable = false
+		default:
+			http.Error(w, fmt.Sprintf("Invalid value [%v] for enabled parameter. Must be one of [y/n]", val), http.StatusBadRequest)
+			return
+		}
+		err = c.ToggleCodebase(ctx, ap, enable)
+		if err != nil {
+			// TODO: handle not found gracefully
+			log.Error().Err(err).Str("assetPath", ap).Bool("enable", enable).Msg("Unable to change codebase config")
+			http.Error(w, "Unexpected internal error, please check logs for more information", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}
 }
 
 func apiOrAssetHandler(rootCtx context.Context, c *cassette.Control, tape lua.LGFunction) http.Handler {

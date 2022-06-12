@@ -102,6 +102,30 @@ func TestUploadAsset(t *testing.T) {
 	apitest.Handler(handler).Get("/index2.html").Expect(t).Status(http.StatusOK).Body("<h1>it also works</h1>").End()
 }
 
+func TestUploadCode(t *testing.T) {
+	ctx := context.Background()
+	tape, cleanup := testutil.AcquireWritableCassette(ctx, t, "test")
+	defer cleanup()
+	err := tape.EnablePrivileges()
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := AsPrivilegedHandler(ctx, tape, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	apitest.Handler(handler).Put("/.internals/write-asset/codebase/index.lua").Body(`
+	local ctx = require('ctx')
+	local res = ctx.res
+	res:write_body('hello from lua')
+	`).Expect(t).Status(http.StatusOK).End()
+	apitest.Handler(handler).Put("/.internals/enable-code/codebase/index.lua").Query("enabled", "true").Expect(t).Status(http.StatusOK).End()
+	apitest.Handler(handler).Post("/.internals/set-route/api/index").Body(`{"asset":"codebase/index.lua", "methods":["GET"]}`).Expect(t).Status(http.StatusOK).End()
+	// do the silly sleep to allow an internal refresh
+	time.Sleep(time.Second * 2)
+	apitest.Handler(handler).Get("/api/index").Expect(t).Status(http.StatusOK).Body("hello from lua").End()
+}
+
 func TestFormParsing(t *testing.T) {
 	ctx := context.Background()
 	var err error
