@@ -35,7 +35,9 @@ func TestProtect(t *testing.T) {
 		t.Fatal(err)
 	}
 	apitest.Handler(protected).Get("/.auth/").Expect(t).Status(http.StatusUnauthorized).End()
+	apitest.Handler(protected).Get("/.auth/.health").Header("Authorization", fmt.Sprintf("Bearer %v", "abc123")).Expect(t).Status(http.StatusUnauthorized).End()
 	ts.Save(context.Background(), "abc123")
+	apitest.Handler(protected).Get("/.auth/.health").Header("Authorization", fmt.Sprintf("Bearer %v", "abc123")).Expect(t).Status(http.StatusOK).End()
 	apitest.Handler(protected).Get("/.auth/something").Header("Authorization", fmt.Sprintf("Bearer %v", "abc123")).Expect(t).Status(http.StatusOK).End()
 	if count != 1 {
 		t.Fatalf("Protected endpoing should have been called only once, got %v", count)

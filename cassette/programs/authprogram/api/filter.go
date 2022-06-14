@@ -50,6 +50,7 @@ func (s *SecurityRealm) Protect(sensitive http.Handler, prefix string) (http.Han
 	}
 	mux := http.NewServeMux()
 	mux.Handle(fmt.Sprintf("%v/.login", prefix), http.HandlerFunc(s.performLogin))
+	mux.Handle(fmt.Sprintf("%v/.health", prefix), http.HandlerFunc(s.authHealthCheck))
 	mux.Handle(fmt.Sprintf("%v/", prefix), http.StripPrefix(prefix, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !s.checkToken(r) {
 			http.Error(w, "Invalid credentials", http.StatusUnauthorized)
@@ -57,12 +58,15 @@ func (s *SecurityRealm) Protect(sensitive http.Handler, prefix string) (http.Han
 		}
 		sensitive.ServeHTTP(w, r)
 	})))
+	return mux, nil
+}
 
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log := logutil.GetOrDefault(r.Context())
-		log.Info().Stringer("url", r.URL).Send()
-		mux.ServeHTTP(w, r)
-	}), nil
+func (s *SecurityRealm) authHealthCheck(w http.ResponseWriter, req *http.Request) {
+	if !s.checkToken(req) {
+		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func (s *SecurityRealm) performLogin(w http.ResponseWriter, req *http.Request) {
