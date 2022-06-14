@@ -58,7 +58,11 @@ func (s *SecurityRealm) Protect(sensitive http.Handler, prefix string) (http.Han
 		sensitive.ServeHTTP(w, r)
 	})))
 
-	return mux, nil
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log := logutil.GetOrDefault(r.Context())
+		log.Info().Stringer("url", r.URL).Send()
+		mux.ServeHTTP(w, r)
+	}), nil
 }
 
 func (s *SecurityRealm) performLogin(w http.ResponseWriter, req *http.Request) {

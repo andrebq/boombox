@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"testing"
 
 	authapi "github.com/andrebq/boombox/cassette/programs/authprogram/api"
@@ -27,20 +28,35 @@ func TestRouter(t *testing.T) {
 	}))
 	defer apiServer.Close()
 
+	authCount := map[string]int{}
+	authServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authCount[r.URL.Path]++
+		w.WriteHeader(http.StatusOK)
+	}))
+
 	ctx := context.Background()
 	queryCalls, _ := url.Parse(queryServer.URL)
 	apiCalls, _ := url.Parse(apiServer.URL)
-	handler, _ := AsHandler(ctx, apiCalls, queryCalls, nil)
+	authCalls, _ := url.Parse(authServer.URL + "/.auth/")
+	handler, _ := AsHandler(ctx, apiCalls, queryCalls, authCalls)
 
 	apitest.Handler(handler).Get("/hello/.query").Expect(t).Status(http.StatusOK).End()
 	apitest.Handler(handler).Get("/index.html").Expect(t).Status(http.StatusOK).End()
 	apitest.Handler(handler).Get("/hello/index.html").Expect(t).Status(http.StatusOK).End()
+	apitest.Handler(handler).Get("/.auth/.login").Expect(t).Status(http.StatusOK).End()
+	apitest.Handler(handler).Get("/.auth/protected/endpoint").Expect(t).Status(http.StatusOK).End()
 
 	if queryCount != 1 {
 		t.Fatal("Invalid query count: ", queryCount)
 	}
 	if apiCount != 2 {
 		t.Fatal("Invalid api count: ", apiCount)
+	}
+	if !reflect.DeepEqual(authCount, map[string]int{
+		"/.auth/.login":             1,
+		"/.auth/protected/endpoint": 1,
+	}) {
+		t.Fatalf("Invalid number of calls to auth endpoint: %v", authCount)
 	}
 }
 

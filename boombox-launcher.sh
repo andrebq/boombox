@@ -18,12 +18,12 @@ echo $! > ./localfiles/api.pid
 ./dist/boombox serve query -bind localhost:7009 -tape ./dist/index.tape &
 echo $! > ./localfiles/query.pid
 
-./dist/boombox serve api private -bind localhost:7010 -tape ./dist/index.tape -auth index -api-prefix /.auth &
+./dist/boombox serve api private -bind localhost:7010 -tape ./dist/index.tape -auth index -api-prefix /.auth/ &
 echo $! > ./localfiles/private-api.pid
 
 ./dist/boombox serve router -bind localhost:7007 --api-endpoint http://localhost:7008/ \
   --query-endpoint http://localhost:7009/ \
-  --admin-endpoint http://localhost:7010/.auth || true
+  --admin-endpoint http://localhost:7010/.auth/ || true
 
 kill $(cat ./localfiles/query.pid) || true
 kill $(cat ./localfiles/api.pid) || true

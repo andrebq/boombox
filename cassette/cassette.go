@@ -40,9 +40,10 @@ type (
 	}
 
 	Code struct {
-		Methods []string
-		Route   string
-		Code    string
+		Methods  []string
+		Route    string
+		Code     string
+		CodePath string
 	}
 
 	Row []interface{}
@@ -110,7 +111,7 @@ func (c *Control) HasPrivileges() bool { return c.extendedPrivileges }
 
 func (c *Control) ListRoutes(ctx context.Context) ([]Code, error) {
 	var out []Code
-	rows, err := c.db.QueryContext(ctx, `select r.route, a.content, r.methods
+	rows, err := c.db.QueryContext(ctx, `select r.route, a.path, a.content, r.methods
 	from routes r
 	inner join codebase c on r.asset_id = c.asset_id
 	inner join assets a on c.asset_id = a.asset_id`)
@@ -120,7 +121,7 @@ func (c *Control) ListRoutes(ctx context.Context) ([]Code, error) {
 	for rows.Next() {
 		var c Code
 		var methodStr string
-		err = rows.Scan(&c.Route, &c.Code, &methodStr)
+		err = rows.Scan(&c.Route, &c.CodePath, &c.Code, &methodStr)
 		if err != nil {
 			return nil, fmt.Errorf("unable to get routes from cassette, cause %w", err)
 		}
@@ -134,11 +135,11 @@ func (c *Control) LookupRoute(ctx context.Context, route string) (Code, error) {
 	// TODO: remove this code duplication
 	var code Code
 	var methodStr string
-	err := c.db.QueryRowContext(ctx, `select r.route, a.content, r.methods
+	err := c.db.QueryRowContext(ctx, `select r.route, a.path, a.content, r.methods
 	from routes r
 	inner join codebase c on r.asset_id = c.asset_id
 	inner join assets a on c.asset_id = a.asset_id
-	where r.route = ?`, route).Scan(&code.Route, &code.Code, &methodStr)
+	where r.route = ?`, route).Scan(&code.Route, &code.CodePath, &code.Code, &methodStr)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Code{}, RouteNotFound{Route: route}
 	} else if err != nil {
@@ -156,7 +157,18 @@ func (c *Control) MapRoute(ctx context.Context, methods []string, route string, 
 	if err != nil {
 		return err
 	}
-	_, err = c.db.ExecContext(ctx, `insert into routes (route, methods, asset_id) values (?, ?, ?) on conflict (route) do update set methods = EXCLUDED.methods and asset_id = EXCLUDED.asset_id`, route, strings.ToUpper(strings.Join(methods, "|")), id)
+	for i, m := range methods {
+		m = strings.ToUpper(m)
+		methods[i] = m
+		switch m {
+		case "GET", "POST", "HEAD", "PUT", "DELETE", "OPTIONS":
+			continue
+		default:
+			return fmt.Errorf("invalid http method: %v", m)
+		}
+	}
+	methodStr := strings.Join(methods, "|")
+	_, err = c.db.ExecContext(ctx, `insert into routes (route, methods, asset_id) values (?, ?, ?) on conflict (route) do update set methods = excluded.methods, asset_id = excluded.asset_id`, route, methodStr, id)
 	if err != nil {
 		return fmt.Errorf("unable to configure route %v using asset %v, cause %w", route, asset, err)
 	}

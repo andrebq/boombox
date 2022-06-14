@@ -32,6 +32,8 @@ func AsHandler(ctx context.Context, apiCalls *url.URL, queryCalls *url.URL, auth
 		if authPrefix == "/" || len(authPrefix) == 0 {
 			return nil, authapi.AuthURLWithoutPath{Prefix: authenticatedCalls.String()}
 		}
+		// remove the path since it is added back by the http router
+		authenticatedCalls.Path = ""
 		authProxy = httputil.NewSingleHostReverseProxy(authenticatedCalls)
 	}
 

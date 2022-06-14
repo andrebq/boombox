@@ -29,3 +29,23 @@ footer {
     justify-content: stretch;
     width: 100%;
 }
+
+fieldset {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: stretch;
+    width: 100%;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    box-sizing: border-box;
+}
+
+fieldset > * {
+    margin: 1.5rem 0 1.5rem 0;
+}
+
+fieldset > *:first-child {
+    margin: 0 0 0 0;
+}

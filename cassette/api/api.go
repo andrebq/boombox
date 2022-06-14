@@ -43,11 +43,40 @@ var (
   </body>
 </html>
 `))
+	routeListTemplate = template.Must(template.New("__root__").Parse(`
+<!doctype html>
+<html>
+  <head>
+	<title>Cassette routes</title>
+  </head>
+  <body>
+    <h1>List of routes from cassette</h1>
+    <ul>
+      {{ range .Routes }}
+      <li>
+        <dl>
+          <dt>Route</dt>
+          <dt>{{ .Route }}</dt>
+          <dt>Methods</dt>
+          {{ range $idx, $value := .Methods }}{{ $value }}{{ end }}
+          <dt>Code path</dt>
+          <dt>{{ .CodePath }}</dt>
+        </dl>
+      </li>
+      {{ end }}
+    </ul>
+  </body>
+</html>
+`))
 )
 
 type (
 	assetListTemplateModel struct {
 		Assets []string
+	}
+
+	routeListTemplateModel struct {
+		Routes []cassette.Code
 	}
 )
 
@@ -82,6 +111,7 @@ func asHandler(ctx context.Context, c *cassette.Control, tapemodule lua.LGFuncti
 	router.RedirectFixedPath = false
 
 	router.HandlerFunc("GET", "/.internals/asset-list", listAssets(c))
+	router.HandlerFunc("GET", "/.internals/dynamic-routes", listRoutes(c))
 	if c.HasPrivileges() {
 		router.HandlerFunc("PUT", "/.internals/write-asset/*assetPath", writeAsset(c))
 		router.HandlerFunc("PUT", "/.internals/enable-code/*assetPath", enableCodebase(ctx, c))
@@ -227,6 +257,17 @@ func listAssets(c *cassette.Control) http.HandlerFunc {
 			return
 		}
 		assetListTemplate.Execute(w, assetListTemplateModel{Assets: items})
+	}
+}
+
+func listRoutes(c *cassette.Control) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		routes, err := c.ListRoutes(r.Context())
+		if err != nil {
+			http.Error(w, "Unable to fetch list of routes, please try again later", http.StatusInternalServerError)
+			return
+		}
+		routeListTemplate.Execute(w, routeListTemplateModel{Routes: routes})
 	}
 }
 

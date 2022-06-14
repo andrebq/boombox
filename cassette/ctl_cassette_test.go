@@ -147,7 +147,18 @@ func TestCodebaseCassette(t *testing.T) {
 	routes, err := c.ListRoutes(ctx)
 	if err != nil {
 		t.Fatal(err)
-	} else if !reflect.DeepEqual(routes, []Code{{Route: "/index", Code: indexLuaCode, Methods: []string{"GET", "POST"}}}) {
+	} else if !reflect.DeepEqual(routes, []Code{{Route: "/index", Code: indexLuaCode, CodePath: "codebase/index.lua", Methods: []string{"GET", "POST"}}}) {
+		t.Fatalf("Unexpected routes found: %#v", routes)
+	}
+	// testing upsert
+	err = c.MapRoute(ctx, []string{"put", "get", "post"}, "/index", "codebase/index.lua")
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes, err = c.ListRoutes(ctx)
+	if err != nil {
+		t.Fatal(err)
+	} else if !reflect.DeepEqual(routes, []Code{{Route: "/index", Code: indexLuaCode, CodePath: "codebase/index.lua", Methods: []string{"PUT", "GET", "POST"}}}) {
 		t.Fatalf("Unexpected routes found: %#v", routes)
 	}
 	indexRoute, err := c.LookupRoute(ctx, "/index")

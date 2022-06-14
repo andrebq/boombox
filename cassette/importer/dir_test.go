@@ -118,8 +118,9 @@ func loadRouteCode(t interface {
 		t.Fatal(err)
 	}
 	return cassette.Code{
-		Route:   route,
-		Methods: strings.Split(strings.ToUpper(methods), "|"),
-		Code:    string(data),
+		Route:    route,
+		Methods:  strings.Split(strings.ToUpper(methods), "|"),
+		Code:     string(data),
+		CodePath: codebase,
 	}
 }
