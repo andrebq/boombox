@@ -5,18 +5,26 @@
     <link href="/css/solarized-dark.css" rel="stylesheet">
     <link href="/css/layout.css" rel="stylesheet">
     <script src="./auth.js"></script>
-    <script src="./upload-asset.js" async></script>
+    <script src="./upload-code.js" async></script>
+    <style>
+        textarea {
+            width: 100%;
+            box-sizing: border-box;
+        }
+    </style>
 </head>
 
 <body>
-    <article>
-        <h1>Upload new asset</h1>
-        <fieldset>
-            <input type="file" id="asset-file">
+    <article class="v-flood">
+        <h1>Update codebase</h1>
+        <fieldset class="fill v-flood">
             <label>
-                Destination path
+                <span>Destination path</span>
                 <input type="text" id="asset-path">
             </label>
+
+            <textarea cols="120" class="fill" id="code"></textarea>
+
             <button id="upload">Upload</button>
         </fieldset>
     </article>

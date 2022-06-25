@@ -115,7 +115,7 @@ func asHandler(ctx context.Context, c *cassette.Control, tapemodule lua.LGFuncti
 	if c.HasPrivileges() {
 		router.HandlerFunc("PUT", "/.internals/write-asset/*assetPath", writeAsset(c))
 		router.HandlerFunc("PUT", "/.internals/enable-code/*assetPath", enableCodebase(ctx, c))
-		router.HandlerFunc("POST", "/.internals/set-route/*route", setRoute(ctx, c))
+		router.HandlerFunc("POST", "/.internals/set-route", setRoute(ctx, c))
 	}
 	router.NotFound = apiOrAssetHandler(ctx, c, tapemodule)
 	return router, nil
@@ -124,8 +124,8 @@ func asHandler(ctx context.Context, c *cassette.Control, tapemodule lua.LGFuncti
 func setRoute(ctx context.Context, c *cassette.Control) http.HandlerFunc {
 	log := logutil.GetOrDefault(ctx).With().Str("action", "set-route").Logger().Sample(zerolog.Sometimes)
 	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
 		var payload struct {
+			Route   string   `json:"route"`
 			Asset   string   `json:"asset"`
 			Methods []string `json:"methods"`
 		}
@@ -138,11 +138,10 @@ func setRoute(ctx context.Context, c *cassette.Control) http.HandlerFunc {
 			http.Error(w, "Missing asset path", http.StatusBadRequest)
 			return
 		}
-		route := httprouter.ParamsFromContext(ctx).ByName("route")
 		payload.Asset = strings.TrimLeft(path.Clean(payload.Asset), "/")
-		err = c.MapRoute(r.Context(), payload.Methods, route, payload.Asset)
+		err = c.MapRoute(r.Context(), payload.Methods, payload.Route, payload.Asset)
 		if err != nil {
-			log.Error().Err(err).Str("assetPath", payload.Asset).Strs("methods", payload.Methods).Str("route", route).Msg("Unable to set route")
+			log.Error().Err(err).Str("assetPath", payload.Asset).Strs("methods", payload.Methods).Str("route", payload.Route).Msg("Unable to set route")
 			http.Error(w, "Unexpected internal error, please check logs for more information", http.StatusInternalServerError)
 			return
 		}

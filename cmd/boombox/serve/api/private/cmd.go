@@ -62,6 +62,9 @@ func Cmd() *cli.Command {
 			},
 		},
 		Action: func(ctx *cli.Context) error {
+			if len(tapes.Value()) != 1 {
+				return errors.New("not implemented, currently boombox only works with a single tape")
+			}
 			deck := tapedeck.New()
 			defer deck.Close()
 			for _, t := range tapes.Value() {

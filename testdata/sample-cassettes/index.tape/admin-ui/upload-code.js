@@ -4,21 +4,9 @@
     let content = '';
     let targetPath = '';
 
-    function readFile(blob) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                resolve(event.target.result);
-            };
-            reader.onabort = reject;
-            reader.onerror = reject;
-            reader.readAsText(blob);
-        });
-    }
     async function callUploadAPI(content, path) {
         let hdrs = new Headers();
         await addAuthHeaders(hdrs);
-
         let res = await fetch(`/.auth/.internals/write-asset/${encodeURIComponent(path)}`, {
             method: 'PUT',
             body: content,
@@ -27,26 +15,37 @@
         if (res.status != 200) {
             throw new Error(`Invalid code for upload: ${res.status}`);
         }
+        res = await fetch(`/.auth/.internals/enable-code/${encodeURIComponent(path)}?enabled=true`, {
+            method: 'PUT',
+            body: JSON.stringify({}),
+            headers: hdrs,
+        });
+        if (res.status != 200) {
+            throw new Error(`Unable to configure [${path}] as codebase, got status code: ${res.status}`);
+        }
         return true;
     }
-    async function uploadFile() {
+    async function uploadCode() {
+        targetPath = document.getElementById('asset-path').value;
+        content = document.getElementById('code').value;
         if (uploading) {
             showStatus('An upload is in progress, please wait a bit...');
             return;
         }
+        if (!targetPath) {
+            showStatus('Please inform the desired path and try again');
+            return;
+        }
+        if (!content) {
+            showStatus('Please provide a valid lua code code and try again');
+            return;
+        }
         uploading = true;
         try {
-        if (loadingFile) {
-            showStatus('File is being loaded, please try agin in a couple of seconds...');
-        } else if (!content) {
-            showStatus('Please select a non-empty file and try again.');
-        } else if (!targetPath) {
-            showStatus('Please inform a valid asset path');
-        }
-        showStatus('Uploading file...');
+            showStatus('Uploading file...');
             try {
                 await callUploadAPI(content, targetPath);
-                showStatus(`Content uploaded to ${targetPath}`);
+                showStatus(`New code uploaded to ${targetPath}`);
             } catch(err) {
                 console.error('Upload error', err)
                 showStatus(`Unable to finish previous upload: ${err}`)
@@ -55,38 +54,26 @@
             uploading = false;
         }
     }
-    async function loadFile(fd) {
-        content = '';
-        loadingFile = true;
-        try {
-            content = await readFile(fd);
-        } finally {
-            loadingFile = false;
-        }
-    }
 
     function showStatus(statusMsg) {
         document.getElementById('info-box').innerHTML = `<strong>${statusMsg}</strong>`;
     }
 
     function registerHandlers() {
-        document.getElementById('asset-file').onchange = async (event) => {
-            if (!event.target.files) {
-                return
-            }
-            await loadFile(event.target.files[0]);
+        document.getElementById('code').onchange = (event) => {
+            content = event.target.value;
         };
+        document.getElementById('code').onblur = (event) => {
+            content = event.target.value;
+        }
         document.getElementById('upload').onclick = async (ev) => {
             ev.preventDefault();
-            uploadFile();
+            uploadCode();
         }
     }
 
     async function loadInitialValues() {
-        let fileInput = document.getElementById('asset-file');
-        if (fileInput.files) {
-            await loadFile(fileInput.files[0]);
-        }
+        content = document.getElementById('code').value;
         targetPath = document.getElementById('asset-path').value;
     }
 

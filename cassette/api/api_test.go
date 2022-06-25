@@ -120,7 +120,7 @@ func TestUploadCode(t *testing.T) {
 	res:write_body('hello from lua')
 	`).Expect(t).Status(http.StatusOK).End()
 	apitest.Handler(handler).Put("/.internals/enable-code/codebase/index.lua").Query("enabled", "true").Expect(t).Status(http.StatusOK).End()
-	apitest.Handler(handler).Post("/.internals/set-route/api/index").Body(`{"asset":"codebase/index.lua", "methods":["GET"]}`).Expect(t).Status(http.StatusOK).End()
+	apitest.Handler(handler).Post("/.internals/set-route").Body(`{"route": "/api/index", "asset":"codebase/index.lua", "methods":["GET"]}`).Expect(t).Status(http.StatusOK).End()
 	// do the silly sleep to allow an internal refresh
 	time.Sleep(time.Second * 2)
 	apitest.Handler(handler).Get("/api/index").Expect(t).Status(http.StatusOK).Body("hello from lua").End()

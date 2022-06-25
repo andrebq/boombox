@@ -43,9 +43,47 @@ fieldset {
 }
 
 fieldset > * {
-    margin: 1.5rem 0 1.5rem 0;
+    margin: 1.5rem 0 0 0;
 }
 
 fieldset > *:first-child {
     margin: 0 0 0 0;
+}
+
+fieldset>label {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    display: inline-flex;
+    align-items: stretch;
+    justify-content: stretch;
+}
+
+fieldset>label>* {
+    margin: 0 0.5rem 0 0;
+}
+
+fieldset>label>*:last-child {
+    margin: 0 0 0 0;
+}
+
+fieldset>label>input {
+    flex-grow: 1;
+}
+
+.v-flood {
+    display: flex;
+    flex-direction: column;
+    justify-content: stretch;
+    align-items: stretch;
+    box-sizing: border-box;
+}
+
+.v-flood .fill {
+    flex-grow: 1;
+}
+
+.v-flood textarea.fill {
+    resize: none;
 }
