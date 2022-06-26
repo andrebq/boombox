@@ -44,12 +44,20 @@ type (
 		Name string
 	}
 
+	RestrictedTable struct {
+		Name string
+	}
+
 	MissingExtendedPrivileges struct{}
 
 	RouteNotFound struct {
 		Route string
 	}
 )
+
+func (r RestrictedTable) Error() string {
+	return fmt.Sprintf("casset: table [%v] cannot be used as dataset, that name is restricted", r.Name)
+}
 
 func (r RouteNotFound) Error() string {
 	return fmt.Sprintf("cassette: route [%v] not found", r.Route)

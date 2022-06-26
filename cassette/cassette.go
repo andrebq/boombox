@@ -52,6 +52,7 @@ type (
 var (
 	errInvalidCodebaseAsset = errors.New("codebase assets must be stored under codebase/ and must have a valid lua mime-type")
 	reValidIdentifiers      = regexp.MustCompile(`^[a-zA-Z_][_a-zA-Z0-9]{0,127}$`)
+	reRestrictedTables      = regexp.MustCompile("^(bb_|sqlite|pragma).*$")
 )
 
 func openCassetteDatabase(ctx context.Context, tape string, dbname string, readwrite bool) (*sql.DB, string, error) {
@@ -656,6 +657,8 @@ func validDatasetTable(name string) error {
 func validDatasetColumn(name string) error {
 	if !reValidIdentifiers.MatchString(name) {
 		return InvalidColumnName{Name: name}
+	} else if reRestrictedTables.MatchString(name) {
+		return RestrictedTable{Name: name}
 	}
 	return nil
 }
