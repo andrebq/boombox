@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -262,7 +263,52 @@ func (c *Control) ToggleCodebase(ctx context.Context, assetPath string, enable b
 }
 
 func (c *Control) ImportJSONDataset(ctx context.Context, table string, dataset io.Reader) error {
-	return errors.New("not implemented")
+	if err := validDatasetTable(table); err != nil {
+		return err
+	}
+	lr := io.LimitReader(dataset, 10_000_000)
+	var out []map[string]interface{}
+	err := json.NewDecoder(lr).Decode(&out)
+	if err != nil {
+		return err
+	}
+	tx, err := c.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if tx != nil {
+			tx.Rollback()
+		}
+	}()
+	for _, v := range out {
+		cmd := bytes.Buffer{}
+		fmt.Fprintf(&cmd, "insert into %v(", table)
+		var col int
+		params := make([]interface{}, len(v))
+		for k, cv := range v {
+			if col > 0 {
+				fmt.Fprintf(&cmd, ",")
+			}
+			if err := validDatasetColumn(k); err != nil {
+				return err
+			}
+			fmt.Fprintf(&cmd, "%v", k)
+			params[col], err = toDatabaseType(cv)
+			if err != nil {
+				return err
+			}
+			col++
+		}
+		fmt.Fprintf(&cmd, ") values (?%v)", strings.Repeat(",?", col-1))
+		_, err = tx.ExecContext(ctx, cmd.String(), params...)
+		if err != nil {
+			return err
+		}
+	}
+	err = tx.Commit()
+	tx = nil
+	return err
 }
 
 func (c *Control) ImportCSVDataset(ctx context.Context, table string, csvStream io.Reader) (string, int64, error) {
@@ -612,4 +658,28 @@ func validDatasetColumn(name string) error {
 		return InvalidColumnName{Name: name}
 	}
 	return nil
+}
+
+func toDatabaseType(native interface{}) (interface{}, error) {
+	v := reflect.ValueOf(native)
+	switch {
+	case v.Kind() == reflect.String:
+		return native, nil
+	case v.Kind() == reflect.Bool:
+		return native, nil
+	case v.CanInt():
+		return v.Int(), nil
+	case v.CanUint():
+		return int64(v.Uint()), nil
+	case v.CanFloat():
+		return v.Float(), nil
+	case v.Kind() == reflect.Slice || v.Kind() == reflect.Array:
+		// treat array of bytes as blob
+		if v.Elem().Kind() == reflect.Uint8 {
+			return native, nil
+		}
+	}
+	buf := &bytes.Buffer{}
+	err := json.NewEncoder(buf).Encode(native)
+	return strings.TrimSpace(buf.String()), err
 }

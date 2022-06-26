@@ -43,7 +43,7 @@ func TestImportJSON(t *testing.T) {
 	}
 
 	rows := []object{
-		{Text: "abc123", Float: 1, Int: 1, Complex: map[string]interface{}{"fld1": 10, "fld2": 10.0}},
+		{Text: "abc123", Float: 1, Int: 1, Complex: map[string]interface{}{"fld1": 10, "fld2": 10.1}},
 	}
 	payload, err := json.Marshal(rows)
 	if err != nil {
@@ -71,13 +71,14 @@ func TestImportJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var queryResult bytes.Buffer
-	err = c.Query(ctx, &queryResult, -1, "select * from objects")
+	_ = c.EnablePrivileges()
+	actualRows, err := c.UnsafeQuery(ctx, "select * from objects", true)
 	if err != nil {
-		t.Fatal()
+		t.Fatal(err)
 	}
-	if !bytes.Equal(queryResult.Bytes(), payload) {
-		t.Errorf("Expecting: [%v]\nGot: [%v]", string(payload), queryResult.String())
+	expectedRows := []Row{{"abc123", float64(1), int64(1), `{"fld1":10,"fld2":10.1}`}}
+	if !reflect.DeepEqual(actualRows, expectedRows) {
+		t.Errorf("\nExpecting: [%v]\nGot        [%v]", expectedRows, actualRows)
 	}
 }
 
