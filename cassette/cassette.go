@@ -33,7 +33,6 @@ type (
 		datadb *sql.DB
 
 		controlPath string
-		dataPath    string
 
 		writeable          bool
 		extendedPrivileges bool
@@ -90,13 +89,12 @@ func LoadControlCassette(ctx context.Context, tape string, readwrite bool, enabl
 		return nil, fmt.Errorf("unable to init cassette %v, cause %v", tape, err)
 	}
 	if enableData {
-		dataconn, dataPath, err := openCassetteDatabase(ctx, tape, "datak7.db", readwrite)
+		dataconn, _, err := openCassetteDatabase(ctx, tape, filepath.Base(c.controlPath), false)
 		if err != nil {
 			c.Close()
 			return nil, err
 		}
 		c.datadb = dataconn
-		c.dataPath = dataPath
 		err = c.initData(ctx)
 		if err != nil {
 			c.Close()
@@ -310,7 +308,7 @@ func (c *Control) ImportCSVDataset(ctx context.Context, table string, csvStream 
 		fmt.Fprintf(&createTable, "%v %v", h, rowTypes[i])
 	}
 	fmt.Fprintf(&createTable, ")")
-	_, err = c.datadb.ExecContext(ctx, createTable.String())
+	_, err = c.db.ExecContext(ctx, createTable.String())
 	if err != nil {
 		return "", 0, fmt.Errorf("unable to import %v, cause %w", table, err)
 	}
@@ -343,7 +341,7 @@ func (c *Control) ImportCSVDataset(ctx context.Context, table string, csvStream 
 		if err != nil {
 			return err
 		}
-		_, err = c.datadb.ExecContext(ctx, insertStmt, aux...)
+		_, err = c.db.ExecContext(ctx, insertStmt, aux...)
 		if err != nil {
 			return err
 		}
@@ -358,7 +356,7 @@ func (c *Control) ImportCSVDataset(ctx context.Context, table string, csvStream 
 	for {
 		row, err := reader.Read()
 		if errors.Is(err, io.EOF) {
-			return string(createTable.Bytes()), totalRows, nil
+			return createTable.String(), totalRows, nil
 		}
 		err = insertRow(row)
 		if err != nil {
@@ -552,7 +550,7 @@ func (c *Control) init(ctx context.Context) error {
 }
 
 func (c *Control) initData(ctx context.Context) error {
-	_, err := c.db.ExecContext(ctx, `attach database ? as 'dataset'`, c.dataPath)
+	_, err := c.db.ExecContext(ctx, `attach database ? as 'dataset'`, c.controlPath)
 	return err
 }
 
