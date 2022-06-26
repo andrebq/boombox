@@ -261,6 +261,10 @@ func (c *Control) ToggleCodebase(ctx context.Context, assetPath string, enable b
 	return nil
 }
 
+func (c *Control) ImportJSONDataset(ctx context.Context, table string, dataset io.Reader) error {
+	return errors.New("not implemented")
+}
+
 func (c *Control) ImportCSVDataset(ctx context.Context, table string, csvStream io.Reader) (string, int64, error) {
 	// TODO: this method is HUGE! break it down to make things easier!
 	if !c.writeable {
@@ -299,18 +303,9 @@ func (c *Control) ImportCSVDataset(ctx context.Context, table string, csvStream 
 			rowTypes[i] = "text"
 		}
 	}
-	createTable := bytes.Buffer{}
-	fmt.Fprintf(&createTable, `create table if not exists %v(`, table)
-	for i, h := range header {
-		if i > 0 {
-			fmt.Fprintf(&createTable, ",")
-		}
-		fmt.Fprintf(&createTable, "%v %v", h, rowTypes[i])
-	}
-	fmt.Fprintf(&createTable, ")")
-	_, err = c.db.ExecContext(ctx, createTable.String())
+	tableDDL, err := c.createTable(ctx, table, header, rowTypes)
 	if err != nil {
-		return "", 0, fmt.Errorf("unable to import %v, cause %w", table, err)
+		return "", 0, err
 	}
 	strToTableType := func(val string, colType string) (interface{}, error) {
 		switch colType {
@@ -356,7 +351,7 @@ func (c *Control) ImportCSVDataset(ctx context.Context, table string, csvStream 
 	for {
 		row, err := reader.Read()
 		if errors.Is(err, io.EOF) {
-			return createTable.String(), totalRows, nil
+			return tableDDL, totalRows, nil
 		}
 		err = insertRow(row)
 		if err != nil {
@@ -470,6 +465,32 @@ func (c *Control) UnsafeQuery(ctx context.Context, sql string, hasOutput bool, a
 		ret = append(ret, r)
 	}
 	return ret, nil
+}
+
+func (c *Control) createTable(ctx context.Context, table string, columns []string, dataTypes []string) (string, error) {
+	if err := validDatasetTable(table); err != nil {
+		return "", err
+	}
+	if len(columns) != len(dataTypes) {
+		return "", errors.New("unexpected: size of column list does not match datatype list")
+	}
+	createTable := bytes.Buffer{}
+	fmt.Fprintf(&createTable, `create table if not exists %v(`, table)
+	for i, h := range columns {
+		if err := validDatasetColumn(h); err != nil {
+			return "", err
+		}
+		if i > 0 {
+			fmt.Fprintf(&createTable, ",")
+		}
+		fmt.Fprintf(&createTable, "%v %v", h, dataTypes[i])
+	}
+	fmt.Fprintf(&createTable, ")")
+	_, err := c.db.ExecContext(ctx, createTable.String())
+	if err != nil {
+		return "", fmt.Errorf("unable to import %v, cause %w", table, err)
+	}
+	return createTable.String(), nil
 }
 
 func (c *Control) nextSeq(ctx context.Context, seq string) (int64, error) {

@@ -3,6 +3,7 @@ package cassette
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"io/ioutil"
@@ -30,6 +31,53 @@ func TestIdentifiers(t *testing.T) {
 		if valid != tc.valid {
 			t.Errorf("identifier reValidIdentifiers.MatchString(%v) should return %v but got %v", tc.ident, tc.valid, valid)
 		}
+	}
+}
+
+func TestImportJSON(t *testing.T) {
+	type object struct {
+		Text    string                 `json:"a_text"`
+		Float   float64                `json:"a_float"`
+		Int     int64                  `json:"an_int"`
+		Complex map[string]interface{} `json:"a_json"`
+	}
+
+	rows := []object{
+		{Text: "abc123", Float: 1, Int: 1, Complex: map[string]interface{}{"fld1": 10, "fld2": 10.0}},
+	}
+	payload, err := json.Marshal(rows)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tape, cleanup := tempTape(t, "test")
+	t.Logf("Tape: %v", tape)
+	_ = cleanup
+	defer cleanup()
+
+	ctx := context.Background()
+	c, err := LoadControlCassette(ctx, tape, true, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	_, err = c.createTable(ctx, "objects", []string{"a_text", "a_float", "an_int", "a_json"}, []string{"text", "float", "int", "text"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = c.ImportJSONDataset(ctx, "objects", bytes.NewBuffer(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var queryResult bytes.Buffer
+	err = c.Query(ctx, &queryResult, -1, "select * from objects")
+	if err != nil {
+		t.Fatal()
+	}
+	if !bytes.Equal(queryResult.Bytes(), payload) {
+		t.Errorf("Expecting: [%v]\nGot: [%v]", string(payload), queryResult.String())
 	}
 }
 
