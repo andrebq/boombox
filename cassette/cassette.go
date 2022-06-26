@@ -112,9 +112,9 @@ func (c *Control) HasPrivileges() bool { return c.extendedPrivileges }
 func (c *Control) ListRoutes(ctx context.Context) ([]Code, error) {
 	var out []Code
 	rows, err := c.db.QueryContext(ctx, `select r.route, a.path, a.content, r.methods
-	from routes r
-	inner join codebase c on r.asset_id = c.asset_id
-	inner join assets a on c.asset_id = a.asset_id`)
+	from bb_routes r
+	inner join bb_codebase c on r.asset_id = c.asset_id
+	inner join bb_assets a on c.asset_id = a.asset_id`)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get routes from cassette, cause %w", err)
 	}
@@ -136,9 +136,9 @@ func (c *Control) LookupRoute(ctx context.Context, route string) (Code, error) {
 	var code Code
 	var methodStr string
 	err := c.db.QueryRowContext(ctx, `select r.route, a.path, a.content, r.methods
-	from routes r
-	inner join codebase c on r.asset_id = c.asset_id
-	inner join assets a on c.asset_id = a.asset_id
+	from bb_routes r
+	inner join bb_codebase c on r.asset_id = c.asset_id
+	inner join bb_assets a on c.asset_id = a.asset_id
 	where r.route = ?`, route).Scan(&code.Route, &code.CodePath, &code.Code, &methodStr)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Code{}, RouteNotFound{Route: route}
@@ -168,7 +168,7 @@ func (c *Control) MapRoute(ctx context.Context, methods []string, route string, 
 		}
 	}
 	methodStr := strings.Join(methods, "|")
-	_, err = c.db.ExecContext(ctx, `insert into routes (route, methods, asset_id) values (?, ?, ?) on conflict (route) do update set methods = excluded.methods, asset_id = excluded.asset_id`, route, methodStr, id)
+	_, err = c.db.ExecContext(ctx, `insert into bb_routes (route, methods, asset_id) values (?, ?, ?) on conflict (route) do update set methods = excluded.methods, asset_id = excluded.asset_id`, route, methodStr, id)
 	if err != nil {
 		return fmt.Errorf("unable to configure route %v using asset %v, cause %w", route, asset, err)
 	}
@@ -177,7 +177,7 @@ func (c *Control) MapRoute(ctx context.Context, methods []string, route string, 
 
 func (c *Control) ListAssets(ctx context.Context) ([]string, error) {
 	var out []string
-	rows, err := c.db.QueryContext(ctx, `select path from assets order by path asc`)
+	rows, err := c.db.QueryContext(ctx, `select path from bb_assets order by path asc`)
 	if err != nil {
 		return nil, fmt.Errorf("unable to list assets, cause %w", err)
 	}
@@ -198,7 +198,7 @@ func (c *Control) CopyAsset(ctx context.Context, out io.Writer, assetPath string
 	var content string
 	var aid int64
 	var mt string
-	err := c.db.QueryRowContext(ctx, `select asset_id, mime_type, content from assets where path_hash64 = ? and path = ?`, pathHash, assetPath).Scan(&aid, &mt, &content)
+	err := c.db.QueryRowContext(ctx, `select asset_id, mime_type, content from bb_assets where path_hash64 = ? and path = ?`, pathHash, assetPath).Scan(&aid, &mt, &content)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, "", AssetNotFound{Path: assetPath}
 	} else if err != nil {
@@ -223,7 +223,7 @@ func (c *Control) StoreAsset(ctx context.Context, assetPath string, mimetype str
 			return 0, InvalidTextContent{Path: assetPath, MimeType: mimetype}
 		}
 	}
-	_, err = c.db.ExecContext(ctx, `insert into assets(asset_id, path, path_hash64, mime_type, content) values (?, ?, ?, ?, ?) on conflict (path) do update set mime_type = EXCLUDED.mime_type, content = EXCLUDED.content`,
+	_, err = c.db.ExecContext(ctx, `insert into bb_assets(asset_id, path, path_hash64, mime_type, content) values (?, ?, ?, ?, ?) on conflict (path) do update set mime_type = EXCLUDED.mime_type, content = EXCLUDED.content`,
 		seq, assetPath, pathHash, mimetype, content)
 	if err != nil {
 		return 0, fmt.Errorf("unable to store asset to cassette, cause %w", err)
@@ -235,7 +235,7 @@ func (c *Control) ToggleCodebase(ctx context.Context, assetPath string, enable b
 	assetPath, pathHash := c.normalizeAssetPath(assetPath)
 	var mt string
 	var id int64
-	err := c.db.QueryRowContext(ctx, `select asset_id, mime_type from assets where path_hash64 = ? and path = ?`, pathHash, assetPath).Scan(&id, &mt)
+	err := c.db.QueryRowContext(ctx, `select asset_id, mime_type from bb_assets where path_hash64 = ? and path = ?`, pathHash, assetPath).Scan(&id, &mt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return AssetNotFound{Path: assetPath}
 	} else if err != nil {
@@ -253,9 +253,9 @@ func (c *Control) ToggleCodebase(ctx context.Context, assetPath string, enable b
 		}
 	}
 	if enable {
-		_, err = c.db.ExecContext(ctx, `insert into codebase(asset_id) values (?) on conflict (asset_id) do nothing`, id)
+		_, err = c.db.ExecContext(ctx, `insert into bb_codebase(asset_id) values (?) on conflict (asset_id) do nothing`, id)
 	} else {
-		_, err = c.db.ExecContext(ctx, `delete from codebase where asset_id = ?`, id)
+		_, err = c.db.ExecContext(ctx, `delete from bb_codebase where asset_id = ?`, id)
 	}
 	if err != nil {
 		return fmt.Errorf("unable to change state of asset %v in codebase, cause %w", assetPath, err)
@@ -476,7 +476,7 @@ func (c *Control) UnsafeQuery(ctx context.Context, sql string, hasOutput bool, a
 
 func (c *Control) nextSeq(ctx context.Context, seq string) (int64, error) {
 	var val int64
-	err := c.db.QueryRowContext(ctx, `insert into counters (name, val) values (?, 1) on conflict do update set val = val + 1 returning val`, seq).Scan(&val)
+	err := c.db.QueryRowContext(ctx, `insert into bb_counters (name, val) values (?, 1) on conflict do update set val = val + 1 returning val`, seq).Scan(&val)
 	if err != nil {
 		return 0, fmt.Errorf("unable to increment sequence %v, cause %w", seq, err)
 	}
@@ -493,7 +493,7 @@ func (c *Control) lookupCodebase(ctx context.Context, assetPath string) (int64, 
 	}
 	var id int64
 	var mt string
-	err := c.db.QueryRowContext(ctx, `select a.asset_id, a.mime_type from assets a inner join codebase c on c.asset_id = a.asset_id
+	err := c.db.QueryRowContext(ctx, `select a.asset_id, a.mime_type from bb_assets a inner join bb_codebase c on c.asset_id = a.asset_id
 	where a.path_hash64 = ? and a.path = ?`, hash, assetPath).Scan(&id, &mt)
 	if err != nil {
 		return 0, "", fmt.Errorf("unable to lookup codebase on path %v, cause %w", assetPath, err)
@@ -518,11 +518,11 @@ func (c *Control) normalizeAssetPath(assetPath string) (string, int64) {
 
 func (c *Control) init(ctx context.Context) error {
 	for _, cmd := range []string{
-		`create table if not exists counters(
+		`create table if not exists bb_counters(
 			name text not null primary key,
 			val integer not null
 		)`,
-		`create table if not exists assets(
+		`create table if not exists bb_assets(
 			asset_id integer not null primary key,
 			path text not null unique,
 			path_hash64 integer not null,
@@ -530,17 +530,17 @@ func (c *Control) init(ctx context.Context) error {
 			content blob not null
 		)`,
 		`create index if not exists idx_assets_path_hash64
-			on assets(path_hash64)
+			on bb_assets(path_hash64)
 		`,
-		`create table if not exists codebase(
+		`create table if not exists bb_codebase(
 			asset_id integer not null primary key,
-			foreign key (asset_id) references assets(asset_id)
+			foreign key (asset_id) references bb_assets(asset_id)
 		)`,
-		`create table if not exists routes(
+		`create table if not exists bb_routes(
 			route text not null primary key,
 			methods text not null,
 			asset_id integer,
-			foreign key(asset_id) references codebase(asset_id)
+			foreign key(asset_id) references bb_codebase(asset_id)
 		)`,
 	} {
 		_, err := c.db.ExecContext(ctx, cmd)

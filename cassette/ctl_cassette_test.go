@@ -108,13 +108,13 @@ func TestQueryCassette(t *testing.T) {
 ,["info.html","text/html"]
 ]}`
 	var buf bytes.Buffer
-	err = c.Query(ctx, &buf, -1, "select path, mime_type from assets")
+	err = c.Query(ctx, &buf, -1, "select path, mime_type from bb_assets")
 	if err != nil {
 		t.Fatal(err)
 	} else {
 		require.JSONEq(t, expectedJSON, buf.String(), "JSON objects should be equal")
 	}
-	err = c.Query(ctx, io.Discard, 11, "select path, mime_type from assets")
+	err = c.Query(ctx, io.Discard, 11, "select path, mime_type from bb_assets")
 	if !errors.Is(err, WriteOverflow{Total: 11, Max: 11, Next: 21}) {
 		t.Fatalf("Error should be WriteOverflow, got: %#v", err)
 	}

@@ -198,7 +198,7 @@ func apiOrAssetHandler(rootCtx context.Context, c *cassette.Control, tape lua.LG
 		p = strings.TrimLeft(p, "/")
 		serveAsset(c, p).ServeHTTP(w, r)
 	})
-	newRouter := make(chan *httprouter.Router, 0)
+	newRouter := make(chan *httprouter.Router)
 	go monitorDynamicRoutes(rootCtx, c, tape, newRouter, serveStaticAsset)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
@@ -333,6 +333,7 @@ func serveAsset(c *cassette.Control, assetPath string) http.HandlerFunc {
 
 func monitorDynamicRoutes(ctx context.Context, c *cassette.Control, tapedeck lua.LGFunction, output chan<- *httprouter.Router, notfound http.Handler) {
 	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	loadRouter := func(ctx context.Context, c *cassette.Control, deck lua.LGFunction) (*httprouter.Router, error) {
 		routes, err := c.ListRoutes(ctx)
 		if err != nil {
@@ -352,7 +353,7 @@ func monitorDynamicRoutes(ctx context.Context, c *cassette.Control, tapedeck lua
 	defer t.Stop()
 	currentRouter, err := loadRouter(ctx, c, tapedeck)
 	if err != nil {
-		close(output)
+		return
 	}
 	newRouter := make(chan *httprouter.Router, 1)
 	for {
