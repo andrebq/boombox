@@ -592,7 +592,7 @@ func (c *Control) init(ctx context.Context) error {
 			asset_id integer not null primary key,
 			path text not null unique,
 			path_hash64 integer not null,
-			mime_type string not null,
+			mime_type text not null,
 			content blob not null
 		)`,
 		`create index if not exists idx_assets_path_hash64
