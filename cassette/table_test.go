@@ -31,6 +31,9 @@ func TestReadTableInfo(t *testing.T) {
 			{name: "path_hash64", datatype: "INTEGER"},
 		},
 		pk: []string{"asset_id"},
+		unique: []uniqueDef{
+			{name: "uidx_asset_path", columns: []string{"path"}},
+		},
 	}
 
 	if !reflect.DeepEqual(expected, *td) {

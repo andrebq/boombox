@@ -590,11 +590,13 @@ func (c *Control) init(ctx context.Context) error {
 		)`,
 		`create table if not exists bb_assets(
 			asset_id integer not null primary key,
-			path text not null unique,
+			path text not null,
 			path_hash64 integer not null,
 			mime_type text not null,
 			content blob not null
 		)`,
+		`create unique index if not exists uidx_asset_path
+			on bb_assets(path)`,
 		`create index if not exists idx_assets_path_hash64
 			on bb_assets(path_hash64)
 		`,
