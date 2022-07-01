@@ -47,6 +47,11 @@ type (
 	}
 
 	Row []interface{}
+
+	dbLike interface {
+		QueryContext(context.Context, string, ...interface{}) (*sql.Rows, error)
+		ExecContext(context.Context, string, ...interface{}) (sql.Result, error)
+	}
 )
 
 var (
@@ -263,13 +268,14 @@ func (c *Control) ToggleCodebase(ctx context.Context, assetPath string, enable b
 	return nil
 }
 
-func (c *Control) ImportJSONDataset(ctx context.Context, table string, dataset io.Reader) error {
-	if err := validDatasetTable(table); err != nil {
+func (c *Control) ImportJSONDataset(ctx context.Context, tableName string, dataset io.Reader) error {
+	table, err := loadTableDef(ctx, c.db, tableName)
+	if err != nil {
 		return err
 	}
 	lr := io.LimitReader(dataset, 10_000_000)
 	var out []map[string]interface{}
-	err := json.NewDecoder(lr).Decode(&out)
+	err = json.NewDecoder(lr).Decode(&out)
 	if err != nil {
 		return err
 	}
@@ -283,26 +289,7 @@ func (c *Control) ImportJSONDataset(ctx context.Context, table string, dataset i
 		}
 	}()
 	for _, v := range out {
-		cmd := bytes.Buffer{}
-		fmt.Fprintf(&cmd, "insert into %v(", table)
-		var col int
-		params := make([]interface{}, len(v))
-		for k, cv := range v {
-			if col > 0 {
-				fmt.Fprintf(&cmd, ",")
-			}
-			if err := validDatasetColumn(k); err != nil {
-				return err
-			}
-			fmt.Fprintf(&cmd, "%v", k)
-			params[col], err = toDatabaseType(cv)
-			if err != nil {
-				return err
-			}
-			col++
-		}
-		fmt.Fprintf(&cmd, ") values (?%v)", strings.Repeat(",?", col-1))
-		_, err = tx.ExecContext(ctx, cmd.String(), params...)
+		err = c.saveTuple(ctx, tx, v, table)
 		if err != nil {
 			return err
 		}
@@ -543,10 +530,10 @@ func (c *Control) getDDL(ctx context.Context, table tableDef) (string, error) {
 		}
 		fmt.Fprintf(&createTable, "%v %v", h.name, h.datatype)
 	}
-	fmt.Fprintf(&createTable, ");\n")
 	if len(table.pk) > 0 {
-		fmt.Fprintf(&createTable, "alter table %v add constraint pk_%v primary key (%v);\n", table.name, table.name, strings.Join(table.pk, ","))
+		fmt.Fprintf(&createTable, ", primary key(%v)", strings.Join(table.pk, ","))
 	}
+	fmt.Fprintf(&createTable, ");\n")
 	if len(table.unique) > 0 {
 		for _, uc := range table.unique {
 			fmt.Fprintf(&createTable, "create unique index uidx_%v on %v(%v);\n", uc.name, table.name, strings.Join(uc.columns, ","))
@@ -565,9 +552,47 @@ func (c *Control) createTable(ctx context.Context, table tableDef) (string, erro
 	}
 	_, err = c.db.ExecContext(ctx, createTable)
 	if err != nil {
-		return "", fmt.Errorf("unable to import %v, cause %w", table, err)
+		return "", fmt.Errorf("unable to import %v (ddl: %v), cause %w", table, createTable, err)
 	}
 	return createTable, nil
+}
+
+func (c *Control) saveTuple(ctx context.Context, tx dbLike, tuple map[string]interface{}, td *tableDef) error {
+	// TODO: it is night and I'm writing this because I want to finish what I started
+	// This code might look very confusing!
+	var insertCols []string
+	for _, col := range td.columns {
+		if _, has := tuple[col.name]; !has {
+			continue
+		}
+		insertCols = append(insertCols, col.name)
+	}
+	if len(insertCols) == 0 {
+		return nil
+	}
+	var updateCols []string
+	vals := make([]interface{}, len(insertCols))
+	for i, col := range insertCols {
+		if td.canUpdate(col) {
+			updateCols = append(updateCols, fmt.Sprintf("%v = excluded.%v", col, col))
+		}
+		var err error
+		vals[i], err = toDatabaseType(tuple[col])
+		if err != nil {
+			return err
+		}
+	}
+	insert := &bytes.Buffer{}
+	fmt.Fprintf(insert, "insert into %v (%v) values (", td.name, strings.Join(insertCols, ","))
+	for i := range insertCols {
+		if i != 0 {
+			insert.WriteString(",")
+		}
+		insert.WriteString("?")
+	}
+	fmt.Fprintf(insert, ") on conflict do update set %v", strings.Join(updateCols, ","))
+	_, err := tx.ExecContext(ctx, insert.String(), vals...)
+	return err
 }
 
 func (c *Control) nextSeq(ctx context.Context, seq string) (int64, error) {

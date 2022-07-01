@@ -34,6 +34,69 @@ func TestIdentifiers(t *testing.T) {
 	}
 }
 
+func TestTuplesCanBeUpdated(t *testing.T) {
+	type tuple map[string]interface{}
+
+	tape, cleanup := tempTape(t, "test")
+	t.Logf("Tape: %v", tape)
+	_ = cleanup
+	defer cleanup()
+
+	ctx := context.Background()
+	c, err := LoadControlCassette(ctx, tape, true, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	table := tableDef{
+		name: "objects",
+		columns: []columnDef{
+			{name: "key", datatype: "text"},
+			{name: "ring", datatype: "int"},
+			{name: "content", datatype: "text"},
+		},
+		pk: []string{"key", "ring"},
+	}
+	_, err = c.createTable(ctx, table)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = c.saveTuple(ctx, c.db, tuple{"key": "k1", "ring": 1, "content": "first"}, &table)
+	if err != nil {
+		t.Fatal("unable to save tuple", err)
+	}
+	_ = c.EnablePrivileges()
+	actualRows, err := c.UnsafeQuery(ctx, "select key, ring, content from objects", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedRows := []Row{{"k1", int64(1), "first"}}
+	if !reflect.DeepEqual(actualRows, expectedRows) {
+		t.Errorf("\nExpecting: [%v]\nGot        [%v]", expectedRows, actualRows)
+	}
+
+	err = c.saveTuple(ctx, c.db, tuple{"key": "k1", "ring": 1, "content": "second"}, &table)
+	if err != nil {
+		t.Fatal("unable to update tuple", err)
+	}
+	actualRows, err = c.UnsafeQuery(ctx, "select key, ring, content from objects", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedRows = []Row{{"k1", int64(1), "second"}}
+	if !reflect.DeepEqual(actualRows, expectedRows) {
+		t.Errorf("\nExpecting: [%v]\nGot        [%v]", expectedRows, actualRows)
+	}
+	count, err := c.UnsafeQuery(ctx, "select count(*) from objects", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count[0][0] != int64(1) {
+		t.Errorf("Should have found only one row but got: %v", count)
+	}
+}
+
 func TestImportJSON(t *testing.T) {
 	type object struct {
 		Text    string                 `json:"a_text"`

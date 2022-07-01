@@ -24,6 +24,22 @@ type (
 	}
 )
 
+func (td *tableDef) canUpdate(name string) bool {
+	for _, p := range td.pk {
+		if p == name {
+			return false
+		}
+	}
+	for _, uc := range td.unique {
+		for _, c := range uc.columns {
+			if c == name {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func loadTableDef(ctx context.Context, db *sql.DB, name string) (*tableDef, error) {
 	td := tableDef{
 		name: name,
