@@ -14,7 +14,7 @@ import (
 func TestQueryApi(t *testing.T) {
 	ctx := context.Background()
 	cassette, cleanup := testutil.AcquireCassette(ctx, t, "test", func(ctx context.Context, c *cassette.Control) error {
-		_, _, err := c.ImportCSVDataset(ctx, "names", bytes.NewBufferString(`"name","age"
+		_, err := c.ImportCSVDataset(ctx, "names", bytes.NewBufferString(`"name","age"
 "bob",30
 "charlie", 31
 `))

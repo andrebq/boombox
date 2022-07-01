@@ -48,12 +48,20 @@ type (
 		Name string
 	}
 
+	TableAlreadyExistsError struct {
+		Name string
+	}
+
 	MissingExtendedPrivileges struct{}
 
 	RouteNotFound struct {
 		Route string
 	}
 )
+
+func (t TableAlreadyExistsError) Error() string {
+	return fmt.Sprintf("cassete: table %v already exists in this cassette and cannot be re-created", t.Name)
+}
 
 func (r RestrictedTable) Error() string {
 	return fmt.Sprintf("casset: table [%v] cannot be used as dataset, that name is restricted", r.Name)

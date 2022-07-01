@@ -312,16 +312,16 @@ func (c *Control) ImportJSONDataset(ctx context.Context, table string, dataset i
 	return err
 }
 
-func (c *Control) ImportCSVDataset(ctx context.Context, table string, csvStream io.Reader) (string, int64, error) {
+func (c *Control) ImportCSVDataset(ctx context.Context, table string, csvStream io.Reader) (int64, error) {
 	// TODO: this method is HUGE! break it down to make things easier!
 	if !c.writeable {
-		return "", 0, ReadonlyCassette{}
+		return 0, ReadonlyCassette{}
 	}
 	if c.datadb == nil {
-		return "", 0, DatasetNotAllowed{}
+		return 0, DatasetNotAllowed{}
 	}
 	if err := validDatasetTable(table); err != nil {
-		return "", 0, err
+		return 0, err
 	}
 	reader := csv.NewReader(csvStream)
 	reader.LazyQuotes = true
@@ -332,7 +332,7 @@ func (c *Control) ImportCSVDataset(ctx context.Context, table string, csvStream 
 
 	header, err := reader.Read()
 	if err != nil {
-		return "", 0, fmt.Errorf("unable to import %v, cause %w", table, err)
+		return 0, fmt.Errorf("unable to import %v, cause %w", table, err)
 	}
 	newTable.columns = make([]columnDef, len(header))
 	for i := range header {
@@ -342,7 +342,7 @@ func (c *Control) ImportCSVDataset(ctx context.Context, table string, csvStream 
 	}
 	firstRow, err := reader.Read()
 	if err != nil {
-		return "", 0, fmt.Errorf("unable to import %v, cause %w", table, err)
+		return 0, fmt.Errorf("unable to import %v, cause %w", table, err)
 	}
 	for i, d := range firstRow {
 		if _, err := strconv.ParseInt(d, 10, 64); err == nil {
@@ -353,9 +353,12 @@ func (c *Control) ImportCSVDataset(ctx context.Context, table string, csvStream 
 			newTable.columns[i].datatype = "text"
 		}
 	}
-	tableDDL, err := c.createTable(ctx, newTable)
+	_, err = c.createTable(ctx, newTable)
+	if errors.Is(err, TableAlreadyExistsError{Name: newTable.name}) {
+		err = nil
+	}
 	if err != nil {
-		return "", 0, err
+		return 0, err
 	}
 	strToTableType := func(val string, colType string) (interface{}, error) {
 		switch colType {
@@ -395,17 +398,17 @@ func (c *Control) ImportCSVDataset(ctx context.Context, table string, csvStream 
 	}
 	err = insertRow(firstRow)
 	if err != nil {
-		return "", 0, fmt.Errorf("unable to import %v, cause %w", table, err)
+		return 0, fmt.Errorf("unable to import %v, cause %w", table, err)
 	}
 	reader.ReuseRecord = true
 	for {
 		row, err := reader.Read()
 		if errors.Is(err, io.EOF) {
-			return tableDDL, totalRows, nil
+			return totalRows, nil
 		}
 		err = insertRow(row)
 		if err != nil {
-			return "", 0, fmt.Errorf("unable to import %v, cause %w", table, err)
+			return 0, fmt.Errorf("unable to import %v, cause %w", table, err)
 		}
 	}
 }
@@ -517,7 +520,15 @@ func (c *Control) UnsafeQuery(ctx context.Context, sql string, hasOutput bool, a
 	return ret, nil
 }
 
-func (c *Control) createTable(ctx context.Context, table tableDef) (string, error) {
+func (c *Control) TableDDL(ctx context.Context, table string) (string, error) {
+	def, err := loadTableDef(ctx, c.db, table)
+	if err != nil {
+		return "", err
+	}
+	return c.getDDL(ctx, *def)
+}
+
+func (c *Control) getDDL(ctx context.Context, table tableDef) (string, error) {
 	if err := validDatasetTable(table.name); err != nil {
 		return "", err
 	}
@@ -541,11 +552,22 @@ func (c *Control) createTable(ctx context.Context, table tableDef) (string, erro
 			fmt.Fprintf(&createTable, "create unique index uidx_%v on %v(%v);\n", uc.name, table.name, strings.Join(uc.columns, ","))
 		}
 	}
-	_, err := c.db.ExecContext(ctx, createTable.String())
+	return createTable.String(), nil
+}
+
+func (c *Control) createTable(ctx context.Context, table tableDef) (string, error) {
+	if val, _ := loadTableDef(ctx, c.db, table.name); val != nil {
+		return "", TableAlreadyExistsError{Name: table.name}
+	}
+	createTable, err := c.getDDL(ctx, table)
+	if err != nil {
+		return "", err
+	}
+	_, err = c.db.ExecContext(ctx, createTable)
 	if err != nil {
 		return "", fmt.Errorf("unable to import %v, cause %w", table, err)
 	}
-	return createTable.String(), nil
+	return createTable, nil
 }
 
 func (c *Control) nextSeq(ctx context.Context, seq string) (int64, error) {

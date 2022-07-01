@@ -50,6 +50,9 @@ func loadTableDef(ctx context.Context, db *sql.DB, name string) (*tableDef, erro
 			td.pk = append(td.pk, row.name)
 		}
 	}
+	if len(td.columns) == 0 {
+		return nil, sql.ErrNoRows
+	}
 	uniqueIdx, err := listUniqueIndexes(ctx, db, name)
 	if err != nil {
 		return nil, err

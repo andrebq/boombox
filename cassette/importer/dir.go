@@ -160,15 +160,17 @@ func importDataset(ctx context.Context, target *cassette.Control, base string, d
 			l.RaiseError("unable to load datasource: %v, file could not be opened for read", l.CheckString(1))
 		}
 		defer reader.Close()
-		createStmt, rows, err := target.ImportCSVDataset(ctx, tableName, reader)
+		rows, err := target.ImportCSVDataset(ctx, tableName, reader)
 		if err != nil {
 			log.Error().Err(err).Msg("unable to import CSV into cassete")
 			l.RaiseError("unable to load datasource: %v, cassette.ImportCSVDataset failed", l.CheckString(1))
 		}
 
+		tableDDL, err := target.TableDDL(ctx, tableName)
+
 		descriptor := datasources[srcFile]
 		descriptor["ddl"] = map[string]string{
-			"create": createStmt,
+			"create": tableDDL,
 		}
 		buf, err := json.Marshal(descriptor)
 		if err != nil {

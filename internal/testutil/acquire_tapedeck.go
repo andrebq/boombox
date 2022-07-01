@@ -76,7 +76,7 @@ func AcquireCassette(ctx context.Context, t TestLog, name string, loader func(co
 
 func AcquirePopulatedTapedeck(ctx context.Context, t TestLog, loader func(context.Context, string, *cassette.Control) error) (*tapedeck.D, func()) {
 	people, cleanupPeople := AcquireCassette(ctx, t, "people", func(ctx context.Context, c *cassette.Control) error {
-		_, _, err := c.ImportCSVDataset(ctx, "people", bytes.NewBufferString(`"name","age"
+		_, err := c.ImportCSVDataset(ctx, "people", bytes.NewBufferString(`"name","age"
 "bob",22
 "charlie",44
 "ana",66`))

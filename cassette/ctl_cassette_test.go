@@ -103,12 +103,16 @@ func TestImportCSV(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	expectedCreateStmt := "create table if not exists sample_data(text text,integer integer,real real);\n"
-	createStmt, rows, err := c.ImportCSVDataset(ctx, "sample_data", bytes.NewBufferString(csv))
+	expectedCreateStmt := "create table if not exists sample_data(integer INTEGER,real REAL,text TEXT);\n"
+	rows, err := c.ImportCSVDataset(ctx, "sample_data", bytes.NewBufferString(csv))
 	if err != nil {
 		t.Fatal(err)
 	} else if rows != 1 {
 		t.Fatalf("should have imported %v rows, got %v", 1, rows)
+	}
+	createStmt, err := c.TableDDL(ctx, "sample_data")
+	if err != nil {
+		t.Fatal(err)
 	} else if createStmt != expectedCreateStmt {
 		t.Errorf("Create stmt should be (%v) got (%v)", expectedCreateStmt, createStmt)
 	}
