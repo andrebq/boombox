@@ -6,32 +6,32 @@ import (
 )
 
 type (
-	tableDef struct {
-		name    string
-		columns []columnDef
-		pk      []string
-		unique  []uniqueDef
+	TableDef struct {
+		Name       string      `json:"name"`
+		Columns    []ColumnDef `json:"columns"`
+		PrimaryKey []string    `json:"primaryKey"`
+		Unique     []UniqueDef `json:"unique"`
 	}
 
-	uniqueDef struct {
-		name    string
-		columns []string
+	UniqueDef struct {
+		Name    string   `json:"name"`
+		Columns []string `json:"columns"`
 	}
 
-	columnDef struct {
-		name     string
-		datatype string
+	ColumnDef struct {
+		Name     string `json:"name"`
+		Datatype string `json:"datatype"`
 	}
 )
 
-func (td *tableDef) canUpdate(name string) bool {
-	for _, p := range td.pk {
+func (td *TableDef) canUpdate(name string) bool {
+	for _, p := range td.PrimaryKey {
 		if p == name {
 			return false
 		}
 	}
-	for _, uc := range td.unique {
-		for _, c := range uc.columns {
+	for _, uc := range td.Unique {
+		for _, c := range uc.Columns {
 			if c == name {
 				return false
 			}
@@ -40,9 +40,9 @@ func (td *tableDef) canUpdate(name string) bool {
 	return true
 }
 
-func loadTableDef(ctx context.Context, db *sql.DB, name string) (*tableDef, error) {
-	td := tableDef{
-		name: name,
+func loadTableDef(ctx context.Context, db *sql.DB, name string) (*TableDef, error) {
+	td := TableDef{
+		Name: name,
 	}
 
 	type tableInfoRow struct {
@@ -61,12 +61,12 @@ func loadTableDef(ctx context.Context, db *sql.DB, name string) (*tableDef, erro
 		if err != nil {
 			return nil, err
 		}
-		td.columns = append(td.columns, columnDef{name: row.name, datatype: row.datatype})
+		td.Columns = append(td.Columns, ColumnDef{Name: row.name, Datatype: row.datatype})
 		if row.pk {
-			td.pk = append(td.pk, row.name)
+			td.PrimaryKey = append(td.PrimaryKey, row.name)
 		}
 	}
-	if len(td.columns) == 0 {
+	if len(td.Columns) == 0 {
 		return nil, sql.ErrNoRows
 	}
 	uniqueIdx, err := listUniqueIndexes(ctx, db, name)
@@ -78,27 +78,27 @@ func loadTableDef(ctx context.Context, db *sql.DB, name string) (*tableDef, erro
 		if err != nil {
 			return nil, err
 		}
-		td.unique = append(td.unique, udef)
+		td.Unique = append(td.Unique, udef)
 	}
 	return &td, nil
 }
 
-func loadUniqueDef(ctx context.Context, db *sql.DB, name string) (uniqueDef, error) {
+func loadUniqueDef(ctx context.Context, db *sql.DB, name string) (UniqueDef, error) {
 	rows, err := db.QueryContext(ctx, `select name from pragma_index_info(?) order by name`, name)
 	if err != nil {
-		return uniqueDef{}, err
+		return UniqueDef{}, err
 	}
 	defer rows.Close()
-	ud := uniqueDef{
-		name: name,
+	ud := UniqueDef{
+		Name: name,
 	}
 	for rows.Next() {
 		var name string
 		err = rows.Scan(&name)
 		if err != nil {
-			return uniqueDef{}, err
+			return UniqueDef{}, err
 		}
-		ud.columns = append(ud.columns, name)
+		ud.Columns = append(ud.Columns, name)
 	}
 	return ud, nil
 }

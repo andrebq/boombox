@@ -21,18 +21,18 @@ func TestReadTableInfo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	expected := tableDef{
-		name: "bb_assets",
-		columns: []columnDef{
-			{name: "asset_id", datatype: "INTEGER"},
-			{name: "content", datatype: "BLOB"},
-			{name: "mime_type", datatype: "TEXT"},
-			{name: "path", datatype: "TEXT"},
-			{name: "path_hash64", datatype: "INTEGER"},
+	expected := TableDef{
+		Name: "bb_assets",
+		Columns: []ColumnDef{
+			{Name: "asset_id", Datatype: "INTEGER"},
+			{Name: "content", Datatype: "BLOB"},
+			{Name: "mime_type", Datatype: "TEXT"},
+			{Name: "path", Datatype: "TEXT"},
+			{Name: "path_hash64", Datatype: "INTEGER"},
 		},
-		pk: []string{"asset_id"},
-		unique: []uniqueDef{
-			{name: "uidx_asset_path", columns: []string{"path"}},
+		PrimaryKey: []string{"asset_id"},
+		Unique: []UniqueDef{
+			{Name: "uidx_asset_path", Columns: []string{"path"}},
 		},
 	}
 

@@ -314,17 +314,17 @@ func (c *Control) ImportCSVDataset(ctx context.Context, table string, csvStream 
 	reader.LazyQuotes = true
 	reader.TrimLeadingSpace = true
 
-	var newTable tableDef
-	newTable.name = table
+	var newTable TableDef
+	newTable.Name = table
 
 	header, err := reader.Read()
 	if err != nil {
 		return 0, fmt.Errorf("unable to import %v, cause %w", table, err)
 	}
-	newTable.columns = make([]columnDef, len(header))
+	newTable.Columns = make([]ColumnDef, len(header))
 	for i := range header {
-		newTable.columns[i] = columnDef{
-			name: header[i],
+		newTable.Columns[i] = ColumnDef{
+			Name: header[i],
 		}
 	}
 	firstRow, err := reader.Read()
@@ -333,15 +333,15 @@ func (c *Control) ImportCSVDataset(ctx context.Context, table string, csvStream 
 	}
 	for i, d := range firstRow {
 		if _, err := strconv.ParseInt(d, 10, 64); err == nil {
-			newTable.columns[i].datatype = "integer"
+			newTable.Columns[i].Datatype = "integer"
 		} else if _, err := strconv.ParseFloat(d, 64); err == nil {
-			newTable.columns[i].datatype = "real"
+			newTable.Columns[i].Datatype = "real"
 		} else {
-			newTable.columns[i].datatype = "text"
+			newTable.Columns[i].Datatype = "text"
 		}
 	}
-	_, err = c.createTable(ctx, newTable)
-	if errors.Is(err, TableAlreadyExistsError{Name: newTable.name}) {
+	_, err = c.CreateTable(ctx, newTable)
+	if errors.Is(err, TableAlreadyExistsError{Name: newTable.Name}) {
 		err = nil
 	}
 	if err != nil {
@@ -361,9 +361,9 @@ func (c *Control) ImportCSVDataset(ctx context.Context, table string, csvStream 
 	castRow := func(row []string, aux []interface{}) error {
 		for i, v := range row {
 			var err error
-			aux[i], err = strToTableType(v, newTable.columns[i].datatype)
+			aux[i], err = strToTableType(v, newTable.Columns[i].Datatype)
 			if err != nil {
-				return fmt.Errorf("unable to parse %v as %v, cause %w", v, newTable.columns[i].datatype, err)
+				return fmt.Errorf("unable to parse %v as %v, cause %w", v, newTable.Columns[i].Datatype, err)
 			}
 		}
 		return nil
@@ -515,36 +515,39 @@ func (c *Control) TableDDL(ctx context.Context, table string) (string, error) {
 	return c.getDDL(ctx, *def)
 }
 
-func (c *Control) getDDL(ctx context.Context, table tableDef) (string, error) {
-	if err := validDatasetTable(table.name); err != nil {
+func (c *Control) getDDL(ctx context.Context, table TableDef) (string, error) {
+	if err := validDatasetTable(table.Name); err != nil {
 		return "", err
 	}
 	createTable := bytes.Buffer{}
-	fmt.Fprintf(&createTable, `create table if not exists %v(`, table.name)
-	for i, h := range table.columns {
-		if err := validDatasetColumn(h.name); err != nil {
+	fmt.Fprintf(&createTable, `create table if not exists %v(`, table.Name)
+	for i, h := range table.Columns {
+		if err := validDatasetColumn(h.Name); err != nil {
 			return "", err
 		}
 		if i > 0 {
 			fmt.Fprintf(&createTable, ",")
 		}
-		fmt.Fprintf(&createTable, "%v %v", h.name, h.datatype)
+		fmt.Fprintf(&createTable, "%v %v", h.Name, h.Datatype)
 	}
-	if len(table.pk) > 0 {
-		fmt.Fprintf(&createTable, ", primary key(%v)", strings.Join(table.pk, ","))
+	if len(table.PrimaryKey) > 0 {
+		fmt.Fprintf(&createTable, ", primary key(%v)", strings.Join(table.PrimaryKey, ","))
 	}
 	fmt.Fprintf(&createTable, ");\n")
-	if len(table.unique) > 0 {
-		for _, uc := range table.unique {
-			fmt.Fprintf(&createTable, "create unique index uidx_%v on %v(%v);\n", uc.name, table.name, strings.Join(uc.columns, ","))
+	if len(table.Unique) > 0 {
+		for _, uc := range table.Unique {
+			fmt.Fprintf(&createTable, "create unique index uidx_%v on %v(%v);\n", uc.Name, table.Name, strings.Join(uc.Columns, ","))
 		}
 	}
 	return createTable.String(), nil
 }
 
-func (c *Control) createTable(ctx context.Context, table tableDef) (string, error) {
-	if val, _ := loadTableDef(ctx, c.db, table.name); val != nil {
-		return "", TableAlreadyExistsError{Name: table.name}
+func (c *Control) CreateTable(ctx context.Context, table TableDef) (string, error) {
+	if !c.writeable {
+		return "", ReadonlyCassette{}
+	}
+	if val, _ := loadTableDef(ctx, c.db, table.Name); val != nil {
+		return "", TableAlreadyExistsError{Name: table.Name}
 	}
 	createTable, err := c.getDDL(ctx, table)
 	if err != nil {
@@ -557,15 +560,15 @@ func (c *Control) createTable(ctx context.Context, table tableDef) (string, erro
 	return createTable, nil
 }
 
-func (c *Control) saveTuple(ctx context.Context, tx dbLike, tuple map[string]interface{}, td *tableDef) error {
+func (c *Control) saveTuple(ctx context.Context, tx dbLike, tuple map[string]interface{}, td *TableDef) error {
 	// TODO: it is night and I'm writing this because I want to finish what I started
 	// This code might look very confusing!
 	var insertCols []string
-	for _, col := range td.columns {
-		if _, has := tuple[col.name]; !has {
+	for _, col := range td.Columns {
+		if _, has := tuple[col.Name]; !has {
 			continue
 		}
-		insertCols = append(insertCols, col.name)
+		insertCols = append(insertCols, col.Name)
 	}
 	if len(insertCols) == 0 {
 		return nil
@@ -583,7 +586,7 @@ func (c *Control) saveTuple(ctx context.Context, tx dbLike, tuple map[string]int
 		}
 	}
 	insert := &bytes.Buffer{}
-	fmt.Fprintf(insert, "insert into %v (%v) values (", td.name, strings.Join(insertCols, ","))
+	fmt.Fprintf(insert, "insert into %v (%v) values (", td.Name, strings.Join(insertCols, ","))
 	for i := range insertCols {
 		if i != 0 {
 			insert.WriteString(",")

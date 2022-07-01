@@ -48,16 +48,16 @@ func TestTuplesCanBeUpdated(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	table := tableDef{
-		name: "objects",
-		columns: []columnDef{
-			{name: "key", datatype: "text"},
-			{name: "ring", datatype: "int"},
-			{name: "content", datatype: "text"},
+	table := TableDef{
+		Name: "objects",
+		Columns: []ColumnDef{
+			{Name: "key", Datatype: "text"},
+			{Name: "ring", Datatype: "int"},
+			{Name: "content", Datatype: "text"},
 		},
-		pk: []string{"key", "ring"},
+		PrimaryKey: []string{"key", "ring"},
 	}
-	_, err = c.createTable(ctx, table)
+	_, err = c.CreateTable(ctx, table)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,13 +124,13 @@ func TestImportJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	_, err = c.createTable(ctx, tableDef{
-		name: "objects",
-		columns: []columnDef{
-			{name: "a_text", datatype: "text"},
-			{name: "a_float", datatype: "real"},
-			{name: "an_int", datatype: "int"},
-			{name: "a_json", datatype: "text"},
+	_, err = c.CreateTable(ctx, TableDef{
+		Name: "objects",
+		Columns: []ColumnDef{
+			{Name: "a_text", Datatype: "text"},
+			{Name: "a_float", Datatype: "real"},
+			{Name: "an_int", Datatype: "int"},
+			{Name: "a_json", Datatype: "text"},
 		},
 	})
 	if err != nil {
