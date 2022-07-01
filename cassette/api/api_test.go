@@ -126,6 +126,35 @@ func TestUploadCode(t *testing.T) {
 	apitest.Handler(handler).Get("/api/index").Expect(t).Status(http.StatusOK).Body("hello from lua").End()
 }
 
+func TestCreateTable(t *testing.T) {
+	ctx := context.Background()
+	tape, cleanup := testutil.AcquireWritableCassette(ctx, t, "test")
+	defer cleanup()
+	err := tape.EnablePrivileges()
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := AsPrivilegedHandler(ctx, tape, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	apitest.Handler(handler).Post("/.internals/ddl/create/table/objects").Body(
+		`{"columns": [{"name": "key1", "datatype": "text"}, {"name": "key2", "datatype": "text"}], "primaryKey": ["key1"]}`).
+		Expect(t).Status(http.StatusOK).End()
+	// do the silly sleep to allow an internal refresh
+	time.Sleep(time.Second * 2)
+	ddl, err := tape.TableDDL(ctx, "objects")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedDDL := `create table if not exists objects(key1 TEXT,key2 TEXT, primary key(key1));
+create unique index uidx_sqlite_autoindex_objects_1 on objects(key1);
+`
+	if ddl != expectedDDL {
+		t.Errorf("Expecting ddl [%q]\ngot [%q]", expectedDDL, ddl)
+	}
+}
+
 func TestFormParsing(t *testing.T) {
 	ctx := context.Background()
 	var err error

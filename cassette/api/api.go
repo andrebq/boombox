@@ -23,6 +23,7 @@ import (
 	"github.com/andrebq/boombox/internal/lua/luadefaults"
 	"github.com/julienschmidt/httprouter"
 	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -116,9 +117,37 @@ func asHandler(ctx context.Context, c *cassette.Control, tapemodule lua.LGFuncti
 		router.HandlerFunc("PUT", "/.internals/write-asset/*assetPath", writeAsset(c))
 		router.HandlerFunc("PUT", "/.internals/enable-code/*assetPath", enableCodebase(ctx, c))
 		router.HandlerFunc("POST", "/.internals/set-route", setRoute(ctx, c))
+		router.HandlerFunc("POST", "/.internals/ddl/create/table/:table", createTable(ctx, c))
 	}
 	router.NotFound = apiOrAssetHandler(ctx, c, tapemodule)
 	return router, nil
+}
+
+func createTable(ctx context.Context, c *cassette.Control) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tableName := httprouter.ParamsFromContext(r.Context()).ByName("table")
+		var payload cassette.TableDef
+		err := json.NewDecoder(r.Body).Decode(&payload)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		} else if tableName != payload.Name && payload.Name != "" {
+			http.Error(w, "table name from payload does not match url path", http.StatusBadRequest)
+			return
+		}
+		payload.Name = tableName
+		_, err = c.CreateTable(r.Context(), payload)
+		var tae cassette.TableAlreadyExistsError
+		if errors.As(err, &tae) {
+			http.Error(w, "table already exists", http.StatusConflict)
+			return
+		} else if err != nil {
+			log.Error().Err(err).Interface("tdf", payload).Msg("Unable to create table")
+			http.Error(w, "Unexpected internal error, please check logs for more information", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}
 }
 
 func setRoute(ctx context.Context, c *cassette.Control) http.HandlerFunc {
