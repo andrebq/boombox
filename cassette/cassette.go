@@ -327,30 +327,33 @@ func (c *Control) ImportCSVDataset(ctx context.Context, table string, csvStream 
 	reader.LazyQuotes = true
 	reader.TrimLeadingSpace = true
 
+	var newTable tableDef
+	newTable.name = table
+
 	header, err := reader.Read()
 	if err != nil {
 		return "", 0, fmt.Errorf("unable to import %v, cause %w", table, err)
 	}
-	for _, h := range header {
-		if err := validDatasetColumn(h); err != nil {
-			return "", 0, err
+	newTable.columns = make([]columnDef, len(header))
+	for i := range header {
+		newTable.columns[i] = columnDef{
+			name: header[i],
 		}
 	}
 	firstRow, err := reader.Read()
 	if err != nil {
 		return "", 0, fmt.Errorf("unable to import %v, cause %w", table, err)
 	}
-	rowTypes := make([]string, len(firstRow))
 	for i, d := range firstRow {
 		if _, err := strconv.ParseInt(d, 10, 64); err == nil {
-			rowTypes[i] = "integer"
+			newTable.columns[i].datatype = "integer"
 		} else if _, err := strconv.ParseFloat(d, 64); err == nil {
-			rowTypes[i] = "real"
+			newTable.columns[i].datatype = "real"
 		} else {
-			rowTypes[i] = "text"
+			newTable.columns[i].datatype = "text"
 		}
 	}
-	tableDDL, err := c.createTable(ctx, table, header, rowTypes)
+	tableDDL, err := c.createTable(ctx, newTable)
 	if err != nil {
 		return "", 0, err
 	}
@@ -368,9 +371,9 @@ func (c *Control) ImportCSVDataset(ctx context.Context, table string, csvStream 
 	castRow := func(row []string, aux []interface{}) error {
 		for i, v := range row {
 			var err error
-			aux[i], err = strToTableType(v, rowTypes[i])
+			aux[i], err = strToTableType(v, newTable.columns[i].datatype)
 			if err != nil {
-				return fmt.Errorf("unable to parse %v as %v, cause %w", v, rowTypes[i], err)
+				return fmt.Errorf("unable to parse %v as %v, cause %w", v, newTable.columns[i].datatype, err)
 			}
 		}
 		return nil
@@ -514,25 +517,30 @@ func (c *Control) UnsafeQuery(ctx context.Context, sql string, hasOutput bool, a
 	return ret, nil
 }
 
-func (c *Control) createTable(ctx context.Context, table string, columns []string, dataTypes []string) (string, error) {
-	if err := validDatasetTable(table); err != nil {
+func (c *Control) createTable(ctx context.Context, table tableDef) (string, error) {
+	if err := validDatasetTable(table.name); err != nil {
 		return "", err
 	}
-	if len(columns) != len(dataTypes) {
-		return "", errors.New("unexpected: size of column list does not match datatype list")
-	}
 	createTable := bytes.Buffer{}
-	fmt.Fprintf(&createTable, `create table if not exists %v(`, table)
-	for i, h := range columns {
-		if err := validDatasetColumn(h); err != nil {
+	fmt.Fprintf(&createTable, `create table if not exists %v(`, table.name)
+	for i, h := range table.columns {
+		if err := validDatasetColumn(h.name); err != nil {
 			return "", err
 		}
 		if i > 0 {
 			fmt.Fprintf(&createTable, ",")
 		}
-		fmt.Fprintf(&createTable, "%v %v", h, dataTypes[i])
+		fmt.Fprintf(&createTable, "%v %v", h.name, h.datatype)
 	}
-	fmt.Fprintf(&createTable, ")")
+	fmt.Fprintf(&createTable, ");\n")
+	if len(table.pk) > 0 {
+		fmt.Fprintf(&createTable, "alter table %v add constraint pk_%v primary key (%v);\n", table.name, table.name, strings.Join(table.pk, ","))
+	}
+	if len(table.unique) > 0 {
+		for _, uc := range table.unique {
+			fmt.Fprintf(&createTable, "create unique index uidx_%v on %v(%v);\n", uc.name, table.name, strings.Join(uc.columns, ","))
+		}
+	}
 	_, err := c.db.ExecContext(ctx, createTable.String())
 	if err != nil {
 		return "", fmt.Errorf("unable to import %v, cause %w", table, err)

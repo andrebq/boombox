@@ -61,8 +61,15 @@ func TestImportJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-
-	_, err = c.createTable(ctx, "objects", []string{"a_text", "a_float", "an_int", "a_json"}, []string{"text", "float", "int", "text"})
+	_, err = c.createTable(ctx, tableDef{
+		name: "objects",
+		columns: []columnDef{
+			{name: "a_text", datatype: "text"},
+			{name: "a_float", datatype: "real"},
+			{name: "an_int", datatype: "int"},
+			{name: "a_json", datatype: "text"},
+		},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +103,7 @@ func TestImportCSV(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	expectedCreateStmt := "create table if not exists sample_data(text text,integer integer,real real)"
+	expectedCreateStmt := "create table if not exists sample_data(text text,integer integer,real real);\n"
 	createStmt, rows, err := c.ImportCSVDataset(ctx, "sample_data", bytes.NewBufferString(csv))
 	if err != nil {
 		t.Fatal(err)
